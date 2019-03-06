@@ -1,6 +1,6 @@
 // Jest Snapshot v1, https://goo.gl/fbAQLP
 
-exports[`aliased named import 1`] = `
+exports[`with object-config: aliased named import 1`] = `
 "
 import { myFunc as myAliasFunc } from 'testmodule'
 
@@ -10,7 +10,7 @@ import myAliasFunc from './tests/testmodule/myFunc.js';
 "
 `;
 
-exports[`aliased namespace import 1`] = `
+exports[`with object-config: aliased namespace import 1`] = `
 "
 import { thangs } from 'testmodule'
 
@@ -20,7 +20,7 @@ import * as thangs from './tests/testmodule/constants.js';
 "
 `;
 
-exports[`common js default import 1`] = `
+exports[`with object-config: common js default import 1`] = `
 "
 import React from './commonjsmodule'
 
@@ -30,7 +30,7 @@ import React from './commonjsmodule';
 "
 `;
 
-exports[`common js default with named import 1`] = `
+exports[`with object-config: common js default with named import 1`] = `
 "
 import React, { Component } from './commonjsmodule'
 
@@ -40,7 +40,7 @@ import React, { Component } from './commonjsmodule';
 "
 `;
 
-exports[`default import 1`] = `
+exports[`with object-config: default import 1`] = `
 "
 import myFunc from 'testmodule/myFunc'
 
@@ -50,7 +50,7 @@ import myFunc from 'testmodule/myFunc';
 "
 `;
 
-exports[`default import with multiple named import 1`] = `
+exports[`with object-config: default import with multiple named import 1`] = `
 "
 import init, { myFunc, myOtherFunc } from 'testmodule'
 
@@ -62,7 +62,7 @@ import { myOtherFunc } from './tests/testmodule/myOtherFunc.js';
 "
 `;
 
-exports[`glob import 1`] = `
+exports[`with object-config: glob import 1`] = `
 "
 import * as testmodule from 'testmodule'
 
@@ -72,7 +72,7 @@ import * as testmodule from 'testmodule';
 "
 `;
 
-exports[`import export in single line 1`] = `
+exports[`with object-config: import export in single line 1`] = `
 "
 import { myInlineExport } from 'testmodule'
 
@@ -82,7 +82,7 @@ import { myInlineFunc as myInlineExport } from './tests/testmodule/myOtherFunc.j
 "
 `;
 
-exports[`multiple named imports 1`] = `
+exports[`with object-config: multiple named imports 1`] = `
 "
 import { myFunc, myOtherFunc } from 'testmodule'
 
@@ -93,7 +93,7 @@ import { myOtherFunc } from './tests/testmodule/myOtherFunc.js';
 "
 `;
 
-exports[`nested named import 1`] = `
+exports[`with object-config: nested named import 1`] = `
 "
 import { myOtherFunc } from 'testmodule'
 
@@ -103,7 +103,7 @@ import { myOtherFunc } from './tests/testmodule/myOtherFunc.js';
 "
 `;
 
-exports[`single named import 1`] = `
+exports[`with object-config: single named import 1`] = `
 "
 import { myFunc } from 'testmodule'
 
@@ -113,7 +113,7 @@ import myFunc from './tests/testmodule/myFunc.js';
 "
 `;
 
-exports[`unresolved default import 1`] = `
+exports[`with object-config: unresolved default import 1`] = `
 "
 import React from 'reacty'
 
@@ -123,7 +123,140 @@ import React from 'reacty';
 "
 `;
 
-exports[`unresolved default import with named import 1`] = `
+exports[`with object-config: unresolved default import with named import 1`] = `
+"
+import React, { Component } from 'reacty'
+
+      ↓ ↓ ↓ ↓ ↓ ↓
+
+import React, { Component } from 'reacty';
+"
+`;
+
+exports[`with path-to-config: aliased named import 1`] = `
+"
+import { myFunc as myAliasFunc } from 'testmodule'
+
+      ↓ ↓ ↓ ↓ ↓ ↓
+
+import myAliasFunc from './tests/testmodule/myFunc.js';
+"
+`;
+
+exports[`with path-to-config: aliased namespace import 1`] = `
+"
+import { thangs } from 'testmodule'
+
+      ↓ ↓ ↓ ↓ ↓ ↓
+
+import * as thangs from './tests/testmodule/constants.js';
+"
+`;
+
+exports[`with path-to-config: common js default import 1`] = `
+"
+import React from './commonjsmodule'
+
+      ↓ ↓ ↓ ↓ ↓ ↓
+
+import React from './commonjsmodule';
+"
+`;
+
+exports[`with path-to-config: common js default with named import 1`] = `
+"
+import React, { Component } from './commonjsmodule'
+
+      ↓ ↓ ↓ ↓ ↓ ↓
+
+import React, { Component } from './commonjsmodule';
+"
+`;
+
+exports[`with path-to-config: default import 1`] = `
+"
+import myFunc from 'testmodule/myFunc'
+
+      ↓ ↓ ↓ ↓ ↓ ↓
+
+import myFunc from 'testmodule/myFunc';
+"
+`;
+
+exports[`with path-to-config: default import with multiple named import 1`] = `
+"
+import init, { myFunc, myOtherFunc } from 'testmodule'
+
+      ↓ ↓ ↓ ↓ ↓ ↓
+
+import init from './tests/testmodule/index.js';
+import myFunc from './tests/testmodule/myFunc.js';
+import { myOtherFunc } from './tests/testmodule/myOtherFunc.js';
+"
+`;
+
+exports[`with path-to-config: glob import 1`] = `
+"
+import * as testmodule from 'testmodule'
+
+      ↓ ↓ ↓ ↓ ↓ ↓
+
+import * as testmodule from 'testmodule';
+"
+`;
+
+exports[`with path-to-config: import export in single line 1`] = `
+"
+import { myInlineExport } from 'testmodule'
+
+      ↓ ↓ ↓ ↓ ↓ ↓
+
+import { myInlineFunc as myInlineExport } from './tests/testmodule/myOtherFunc.js';
+"
+`;
+
+exports[`with path-to-config: multiple named imports 1`] = `
+"
+import { myFunc, myOtherFunc } from 'testmodule'
+
+      ↓ ↓ ↓ ↓ ↓ ↓
+
+import myFunc from './tests/testmodule/myFunc.js';
+import { myOtherFunc } from './tests/testmodule/myOtherFunc.js';
+"
+`;
+
+exports[`with path-to-config: nested named import 1`] = `
+"
+import { myOtherFunc } from 'testmodule'
+
+      ↓ ↓ ↓ ↓ ↓ ↓
+
+import { myOtherFunc } from './tests/testmodule/myOtherFunc.js';
+"
+`;
+
+exports[`with path-to-config: single named import 1`] = `
+"
+import { myFunc } from 'testmodule'
+
+      ↓ ↓ ↓ ↓ ↓ ↓
+
+import myFunc from './tests/testmodule/myFunc.js';
+"
+`;
+
+exports[`with path-to-config: unresolved default import 1`] = `
+"
+import React from 'reacty'
+
+      ↓ ↓ ↓ ↓ ↓ ↓
+
+import React from 'reacty';
+"
+`;
+
+exports[`with path-to-config: unresolved default import with named import 1`] = `
 "
 import React, { Component } from 'reacty'
 
