@@ -10,7 +10,7 @@ const Resolver = require('./resolver');
 const extractImportSpecifiers = require('./extractImportSpecifiers');
 
 const visitor = (path, state) => {
-    const webpackConfig = require('path').resolve(state.opts.webpackConfig || './webpack.config.js');
+    const webpackConfig = state.opts.webpackConfig || './webpack.config.js';
     const webpackConfigIndex = state.opts.webpackConfigIndex || 0;
 
     const sourcePath = state.file.opts.filename;
