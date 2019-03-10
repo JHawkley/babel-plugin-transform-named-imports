@@ -1,4 +1,8 @@
-function getSimpleType(type) {
+function getSimpleType({local, type}) {
+    if (local.name === 'default') {
+        return 'default';
+    }
+
     switch (type) {
     case 'ExportDefaultSpecifier':
         return 'default';
@@ -16,7 +20,7 @@ module.exports = (declarations, resolve) => {
 
         specifiers.forEach(specifier => {
             exps.push({
-                type: getSimpleType(specifier.type),
+                type: getSimpleType(specifier),
                 name: specifier.local.name,
                 path: importPath,
                 exportedName: (specifier.exported || specifier.local).name,

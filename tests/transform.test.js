@@ -19,32 +19,44 @@ pluginTester({
     },
     snapshot: true,
     tests: {
-        // convert this into a default import that leads to `testmodule/myFunc`
+        // convert this into a default import that leads to `testmodule/myFirstFunc`
         'single named import':
-            `import { myFunc } from 'testmodule'`,
+            `import { theFirstFunc } from 'testmodule'`,
+        
+        // convert this into a default import that leads to `testmodule/myFirstFunc`
+        'import default module by-name then re-export':
+            `import { byNameDefaultImportFunc } from 'testmodule'`,
+        
+        // convert this into a default import that leads to `testmodule/myFirstFunc`
+        'export-from default module by-name':
+            `import { byNameDefaultExportFunc } from 'testmodule'`,
 
-        // convert this into named import that leads to `testmodule/myOtherFunc`
-        'nested named import':
-            `import { myOtherFunc } from 'testmodule'`,
+        // convert this into a named import that leads to `testmodule/mySecondFunc`
+        'import module renamed multiple times':
+            `import { theSecondFunc } from 'testmodule'`,
+        
+        // convert this into a named import that leads to `testmodule/mySecondFunc`
+        'import module re-exported multiple times':
+            `import { theExportedSecondFunc } from 'testmodule'`,
 
-        // convert this into one default import that leads to `testmodule/myFunc`
-        // and a named import that leads to `testmodule/myOtherFunc`
+        // convert this into one default import that leads to `testmodule/myFirstFunc`
+        // and a named import that leads to `testmodule/mySecondFunc`
         'multiple named imports':
-            `import { myFunc, myOtherFunc } from 'testmodule'`,
+            `import { theFirstFunc, theSecondFunc } from 'testmodule'`,
 
         // convert this into three imports, one default import for `init` and
-        // one default import for `myFunc` and a named one for `myOtherFunc`
+        // one default import for `myFirstFunc` and a named one for `mySecondFunc`
         'default import with multiple named import':
-            `import init, { myFunc, myOtherFunc } from 'testmodule'`,
+            `import init, { theFirstFunc, theSecondFunc } from 'testmodule'`,
 
-        // convert this into a default import with `myAliasFunc` leading to
-        // `testmodule/myFunc`
+        // convert this into a default import with `aliasedFunc` leading to
+        // `testmodule/myFirstFunc`
         'aliased named import':
-            `import { myFunc as myAliasFunc } from 'testmodule'`,
+            `import { theFirstFunc as aliasedFunc } from 'testmodule'`,
 
         // don't change existing default imports like this
         'default import':
-            `import myFunc from 'testmodule/myFunc'`,
+            `import myFirstFunc from 'testmodule/myFirstFunc'`,
 
         // unresolved default imports should be left alone
         'unresolved default import':
@@ -70,12 +82,12 @@ pluginTester({
         'glob import':
             `import * as testmodule from 'testmodule'`,
 
-        // make sure we can follow import/export in a single line
-        'import export in single line':
-            `import { myInlineExport } from 'testmodule'`,
+        // make sure we can follow export-from
+        'export-from in single line':
+            `import { theInlineFirstFunc } from 'testmodule'`,
 
         // make sure it doesn't get confused by confusing exports
         'confusing naming':
-        `import { FOO } from 'testmodule'`,
+            `import { FOO } from 'testmodule'`,
     },
 });

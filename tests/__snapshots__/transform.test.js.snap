@@ -2,11 +2,11 @@
 
 exports[`aliased named import 1`] = `
 "
-import { myFunc as myAliasFunc } from 'testmodule'
+import { theFirstFunc as aliasedFunc } from 'testmodule'
 
       ↓ ↓ ↓ ↓ ↓ ↓
 
-import myAliasFunc from './tests/testmodule/myFunc.js';
+import aliasedFunc from './tests/testmodule/myFirstFunc.js';
 "
 `;
 
@@ -46,29 +46,49 @@ import { FOO } from 'testmodule'
 
       ↓ ↓ ↓ ↓ ↓ ↓
 
-import { myOtherFunc as FOO } from './tests/testmodule/myOtherFunc.js';
+import { mySecondFunc as FOO } from './tests/testmodule/mySecondFunc.js';
 "
 `;
 
 exports[`default import 1`] = `
 "
-import myFunc from 'testmodule/myFunc'
+import myFirstFunc from 'testmodule/myFirstFunc'
 
       ↓ ↓ ↓ ↓ ↓ ↓
 
-import myFunc from 'testmodule/myFunc';
+import myFirstFunc from 'testmodule/myFirstFunc';
 "
 `;
 
 exports[`default import with multiple named import 1`] = `
 "
-import init, { myFunc, myOtherFunc } from 'testmodule'
+import init, { theFirstFunc, theSecondFunc } from 'testmodule'
 
       ↓ ↓ ↓ ↓ ↓ ↓
 
 import init from './tests/testmodule/index.js';
-import myFunc from './tests/testmodule/myFunc.js';
-import { myOtherFunc } from './tests/testmodule/myOtherFunc.js';
+import theFirstFunc from './tests/testmodule/myFirstFunc.js';
+import { mySecondFunc as theSecondFunc } from './tests/testmodule/mySecondFunc.js';
+"
+`;
+
+exports[`export-from default module by-name 1`] = `
+"
+import { byNameDefaultExportFunc } from 'testmodule'
+
+      ↓ ↓ ↓ ↓ ↓ ↓
+
+import byNameDefaultExportFunc from './tests/testmodule/myFirstFunc.js';
+"
+`;
+
+exports[`export-from in single line 1`] = `
+"
+import { theInlineFirstFunc } from 'testmodule'
+
+      ↓ ↓ ↓ ↓ ↓ ↓
+
+import theInlineFirstFunc from './tests/testmodule/myFirstFunc.js';
 "
 `;
 
@@ -82,44 +102,54 @@ import * as testmodule from 'testmodule';
 "
 `;
 
-exports[`import export in single line 1`] = `
+exports[`import default module by-name then re-export 1`] = `
 "
-import { myInlineExport } from 'testmodule'
+import { byNameDefaultImportFunc } from 'testmodule'
 
       ↓ ↓ ↓ ↓ ↓ ↓
 
-import { myInlineFunc as myInlineExport } from './tests/testmodule/myOtherFunc.js';
+import byNameDefaultImportFunc from './tests/testmodule/myFirstFunc.js';
+"
+`;
+
+exports[`import module re-exported multiple times 1`] = `
+"
+import { theExportedSecondFunc } from 'testmodule'
+
+      ↓ ↓ ↓ ↓ ↓ ↓
+
+import { mySecondFunc as theExportedSecondFunc } from './tests/testmodule/mySecondFunc.js';
+"
+`;
+
+exports[`import module renamed multiple times 1`] = `
+"
+import { theSecondFunc } from 'testmodule'
+
+      ↓ ↓ ↓ ↓ ↓ ↓
+
+import { mySecondFunc as theSecondFunc } from './tests/testmodule/mySecondFunc.js';
 "
 `;
 
 exports[`multiple named imports 1`] = `
 "
-import { myFunc, myOtherFunc } from 'testmodule'
+import { theFirstFunc, theSecondFunc } from 'testmodule'
 
       ↓ ↓ ↓ ↓ ↓ ↓
 
-import myFunc from './tests/testmodule/myFunc.js';
-import { myOtherFunc } from './tests/testmodule/myOtherFunc.js';
-"
-`;
-
-exports[`nested named import 1`] = `
-"
-import { myOtherFunc } from 'testmodule'
-
-      ↓ ↓ ↓ ↓ ↓ ↓
-
-import { myOtherFunc } from './tests/testmodule/myOtherFunc.js';
+import theFirstFunc from './tests/testmodule/myFirstFunc.js';
+import { mySecondFunc as theSecondFunc } from './tests/testmodule/mySecondFunc.js';
 "
 `;
 
 exports[`single named import 1`] = `
 "
-import { myFunc } from 'testmodule'
+import { theFirstFunc } from 'testmodule'
 
       ↓ ↓ ↓ ↓ ↓ ↓
 
-import myFunc from './tests/testmodule/myFunc.js';
+import theFirstFunc from './tests/testmodule/myFirstFunc.js';
 "
 `;
 

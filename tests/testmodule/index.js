@@ -1,16 +1,21 @@
-import myFunc from './myFunc';
-import { myOtherOtherFunc } from './reexport';
+import theFirstFunc from './myFirstFunc';
+import { default as byNameDefaultImportFunc } from './myFirstFunc';
+import { mySecondFunc } from './mySecondFunc';
+import { myExportedSecondFunc } from './reexport';
 import { FOO } from './constants';
 import * as things from './constants';
 
-export { myInlineFunc as myInlineExport } from './reexport';
+export { default as byNameDefaultExportFunc } from './myFirstFunc';
+export { myInlineFirstFunc as theInlineFirstFunc } from './reexport';
 
 // confusingly named export
-export { myOtherOtherFunc as FOO } from './reexport';
+export { myExportedSecondFunc as FOO } from './reexport';
 
 export {
-    myFunc,
-    myOtherOtherFunc as myOtherFunc,
+    theFirstFunc,
+    mySecondFunc as theSecondFunc,
+    byNameDefaultImportFunc,
+    myExportedSecondFunc as theExportedSecondFunc,
     things as thangs,
 };
 

@@ -1,4 +1,8 @@
-function getSimpleType(type) {
+function getSimpleType({imported, type}) {
+    if (imported && imported.name === 'default') {
+        return 'default';
+    }
+
     switch (type) {
     case 'ImportDefaultSpecifier':
         return 'default';
@@ -18,7 +22,7 @@ module.exports = (declarations, resolve) => {
 
         specifiers.forEach(specifier => {
             imports.push({
-                type: getSimpleType(specifier.type),
+                type: getSimpleType(specifier),
                 path: importPath,
                 name: specifier.local.name,
                 importedName: (specifier.imported || specifier.local).name,
