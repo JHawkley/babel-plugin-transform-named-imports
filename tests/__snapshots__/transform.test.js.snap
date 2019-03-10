@@ -20,6 +20,16 @@ import * as thangs from './tests/testmodule/constants.js';
 "
 `;
 
+exports[`bare import 1`] = `
+"
+import 'testmodule'
+
+      ↓ ↓ ↓ ↓ ↓ ↓
+
+import 'testmodule';
+"
+`;
+
 exports[`common js default import 1`] = `
 "
 import React from './commonjsmodule'

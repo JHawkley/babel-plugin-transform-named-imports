@@ -19,6 +19,9 @@ pluginTester({
     },
     snapshot: true,
     tests: {
+        // imports with no specifiers should be left alone
+        'bare import':
+            `import 'testmodule'`,
         // convert this into a default import that leads to `testmodule/myFirstFunc`
         'single named import':
             `import { theFirstFunc } from 'testmodule'`,
