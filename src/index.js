@@ -82,12 +82,6 @@ const visitor = (path, state) => {
             debug('IMPORTS', ast.importSpecifiers());
             debug('EXPORTS', ast.exportSpecifiers());
 
-            pointer = ast.importSpecifiers().find(imp => imp.name === name);
-            if (pointer) {
-                exportedSpecifier = pointer;
-                break;
-            }
-
             // perhaps there was a re-export, check the export specifiers
             pointer = ast.exportSpecifiers().find(exp => exp.exportedName === name);
             if (pointer) {

@@ -40,6 +40,16 @@ import React, { Component } from './commonjsmodule';
 "
 `;
 
+exports[`confusing naming 1`] = `
+"
+import { FOO } from 'testmodule'
+
+      ↓ ↓ ↓ ↓ ↓ ↓
+
+import { myOtherFunc as FOO } from './tests/testmodule/myOtherFunc.js';
+"
+`;
+
 exports[`default import 1`] = `
 "
 import myFunc from 'testmodule/myFunc'

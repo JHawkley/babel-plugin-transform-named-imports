@@ -73,5 +73,9 @@ pluginTester({
         // make sure we can follow import/export in a single line
         'import export in single line':
             `import { myInlineExport } from 'testmodule'`,
+
+        // make sure it doesn't get confused by confusing exports
+        'confusing naming':
+        `import { FOO } from 'testmodule'`,
     },
 });
