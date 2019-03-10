@@ -12,6 +12,7 @@ const extractImportSpecifiers = require('./extractImportSpecifiers');
 const visitor = (path, state) => {
     const webpackConfig = require('path').resolve(state.opts.webpackConfig || './webpack.config.js');
     const webpackConfigIndex = state.opts.webpackConfigIndex || 0;
+    const visitedNames = state.visitedNames;
 
     const sourcePath = state.file.opts.filename;
     const resolver = new Resolver(webpackConfig, webpackConfigIndex);
@@ -21,10 +22,16 @@ const visitor = (path, state) => {
         return;
     }
 
+    // get the declaration's import specifiers, filtering out any
+    // that have already been visited previously
     const specifiers = extractImportSpecifiers(
-        [path.node], path => resolver.resolveFile(path, sourcePath));
+        [path.node], path => resolver.resolveFile(path, sourcePath)
+    ).filter(spec => !visitedNames.has(spec.importedName));
 
-    const transforms = [];
+    // if there is no work to do, exit immediately
+    if (specifiers.length === 0) {
+        return;
+    }
 
     // leave single, default imports alone
     if (specifiers.length === 1 && specifiers[0].type === 'default') {
@@ -43,8 +50,19 @@ const visitor = (path, state) => {
             ospath.dirname(sourcePath), specifier.path);
     };
 
+    const transforms = [];
+
     for (let i = 0; i < specifiers.length; ++i) {
         const specifier = specifiers[i];
+
+        let exportedSpecifier;
+        let pointer;
+        let iteration = 0;
+        let path = specifier.path;
+        let name = specifier.importedName;
+
+        // we are visiting this import, so add it to the visited list
+        visitedNames.add(name);
 
         // default imports can usually not be further resolved,
         // bail out and leave it as is.. we do have to do a transform
@@ -53,19 +71,13 @@ const visitor = (path, state) => {
         if (specifier.type === 'default') {
             transforms.push(types.importDeclaration(
                 [types.importDefaultSpecifier(
-                    types.identifier(specifier.name)
+                    types.identifier(name)
                 )],
                 types.stringLiteral(makeImportPath(specifier)),
             ));
 
             continue;
         }
-
-        let exportedSpecifier;
-        let pointer;
-        let iteration = 0;
-        let path = specifier.path;
-        let name = specifier.importedName;
 
         do {
             iteration += 1;
@@ -162,6 +174,12 @@ const visitor = (path, state) => {
 module.exports = () => ({
     name: 'transform-named-imports',
     visitor: {
+        Program: (path, state) => {
+            // for every program, create some state to track identifier
+            // names that have already been visited; this should prevent
+            // unnecessary extra visits and infinite recursions
+            state.visitedNames = new Set();
+        },
         ImportDeclaration: visitor,
     },
 });
