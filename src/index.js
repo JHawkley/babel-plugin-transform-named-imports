@@ -10,12 +10,7 @@ const Resolver = require('./resolver');
 const extractImportSpecifiers = require('./extractImportSpecifiers');
 
 const visitor = (path, state) => {
-    const webpackConfig = ospath.resolve(state.opts.webpackConfig || './webpack.config.js');
-    const webpackConfigIndex = state.opts.webpackConfigIndex || 0;
-    const visitedNames = state.visitedNames;
-
-    const sourcePath = state.file.opts.filename;
-    const resolver = new Resolver(webpackConfig, webpackConfigIndex);
+    const { visitedNames, sourcePath, resolver } = state;
 
     // skip imports we cannot resolve
     if (!resolver.resolveFile(path.node.source.value, sourcePath)) {
@@ -175,6 +170,13 @@ module.exports = () => ({
     name: 'transform-named-imports',
     visitor: {
         Program: (path, state) => {
+            // setup configuration once per program
+            const webpackConfig = ospath.resolve(state.opts.webpackConfig || './webpack.config.js');
+            const webpackConfigIndex = state.opts.webpackConfigIndex || 0;
+
+            state.sourcePath = state.file.opts.filename;
+            state.resolver = new Resolver(webpackConfig, webpackConfigIndex);
+
             // for every program, create some state to track identifier
             // names that have already been visited; this should prevent
             // unnecessary extra visits and infinite recursions
