@@ -119,11 +119,10 @@ const ImportDeclaration = (path, state) => {
                 // it was re-exported! find the matching local import
                 pointer = ast.importSpecifiers().find(imp => imp.name === pointer.name);
                 if (pointer) {
-                    path = pointer.path;
-                    name = pointer.importedName;
-
                     debug('FOUND THE RE-EXPORT!', pointer);
-
+                    
+                    name = pointer.importedName;
+                    path = pointer.path;
                     exportedSpecifier = pointer;
                     continue;
                 }
