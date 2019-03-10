@@ -110,7 +110,7 @@ const ImportDeclaration = (path, state) => {
 
                 // it could be that this export is also an import in the same line
                 if (pointer.path) {
-                    name = pointer.importedName;
+                    name = pointer.name;
                     path = pointer.path;
                     exportedSpecifier = pointer;
                     continue;

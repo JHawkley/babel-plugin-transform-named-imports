@@ -89,6 +89,9 @@ pluginTester({
         'export-from in single line':
             `import { theInlineFirstFunc } from 'testmodule'`,
 
+        'export-from un-aliased':
+            `import { myThirdFunc } from 'testmodule'`,
+
         // make sure it doesn't get confused by confusing exports
         'confusing naming':
             `import { FOO } from 'testmodule'`,

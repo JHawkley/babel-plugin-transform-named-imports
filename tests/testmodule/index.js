@@ -8,6 +8,9 @@ import * as things from './constants';
 export { default as byNameDefaultExportFunc } from './myFirstFunc';
 export { myInlineFirstFunc as theInlineFirstFunc } from './reexport';
 
+// export-from an un-aliased function multiple times
+export { myThirdFunc } from './reexport';
+
 // confusingly named export
 export { myExportedSecondFunc as FOO } from './reexport';
 

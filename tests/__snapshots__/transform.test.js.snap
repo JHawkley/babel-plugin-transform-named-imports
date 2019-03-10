@@ -102,6 +102,16 @@ import theInlineFirstFunc from './tests/testmodule/myFirstFunc.js';
 "
 `;
 
+exports[`export-from un-aliased 1`] = `
+"
+import { myThirdFunc } from 'testmodule'
+
+      ↓ ↓ ↓ ↓ ↓ ↓
+
+import { myThirdFunc } from './tests/testmodule/myThirdFunc.js';
+"
+`;
+
 exports[`glob import 1`] = `
 "
 import * as testmodule from 'testmodule'
