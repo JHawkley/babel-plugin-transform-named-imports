@@ -2,19 +2,20 @@ const fs = require('fs');
 
 const Babylon = require('babylon');
 
-const Resolver = require('./resolver');
 const extractExportSpecifiers = require('./extractExportSpecifiers');
 const extractImportSpecifiers = require('./extractImportSpecifiers');
 
 /**
  * Small wrapper over the Babylon ES6 AST.
+ * @deprecated Use {@link import('./specResolver')|SpecResolver} to extract
+ * specifiers from a file instead.
  */
 class AST {
     /**
-     * Initializes a new instance of {@see AST}.
-     * @param ast The AST to wrap.
-     * @param resolver The resolver to use when resolving a file.
-     * @param source The path to the file from which this AST was parsed.
+     * Initializes a new instance of {@link AST}.
+     * @param {*} ast The AST to wrap.
+     * @param {import('./resolver')} resolver The resolver to use when resolving a file.
+     * @param {string} sourcePath The path to the file from which this AST was parsed.
      */
     constructor(ast, resolver, sourcePath) {
         this.ast = ast;
@@ -25,8 +26,8 @@ class AST {
     /**
      * Parses the specified JS/ES6 file with the Babylon parser
      * and returns the AST.
-     * @param filePath The path to the file to parse.
-     * @param resolver The resolver to use to resolve the specified file.
+     * @param {string} filePath The path to the file to parse.
+     * @param {import('./resolver')} resolver The resolver to use to resolve the specified file.
      * @returns The AST of the specified file or null if the specified
      * file could not be found or could not be parsed.
      */
@@ -71,8 +72,8 @@ class AST {
     /**
      * Resolves the absolute path to the specified file,
      * relative to the file being parsed.
-     * @param path The path to resolve.
-     * @returns The absolute path to the specified file or
+     * @param {string} path The path to resolve.
+     * @returns {string} The absolute path to the specified file or
      * null if the path could not be resolved.
      */
     resolve(path) {

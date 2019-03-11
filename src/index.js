@@ -5,17 +5,17 @@ const ospath = require('path');
 const Babylon = require('babylon');
 const types = require('babel-types');
 
-const AST = require('./ast');
-const Resolver = require('./resolver');
+const SpecResolver = require('./specResolver');
+const PathResolver = require('./pathResolver');
 const extractImportSpecifiers = require('./extractImportSpecifiers');
 
 const Program = (path, state) => {
     // setup configuration once per program
-    const webpackConfig = ospath.resolve(state.opts.webpackConfig || './webpack.config.js');
-    const webpackConfigIndex = state.opts.webpackConfigIndex || 0;
+    const pathResolver = new PathResolver(state.opts);
 
+    state.pathResolver = pathResolver;
+    state.specResolver = new SpecResolver(pathResolver);
     state.sourcePath = state.file.opts.filename;
-    state.resolver = new Resolver(webpackConfig, webpackConfigIndex);
 
     // for every program, create some state to track identifier
     // names that have already been visited; this should prevent
@@ -24,17 +24,17 @@ const Program = (path, state) => {
 };
 
 const ImportDeclaration = (path, state) => {
-    const { visitedNames, sourcePath, resolver } = state;
+    const { visitedNames, pathResolver, specResolver, sourcePath } = state;
 
     // skip imports we cannot resolve
-    if (!resolver.resolveFile(path.node.source.value, sourcePath)) {
+    if (!pathResolver.resolve(path.node.source.value, sourcePath)) {
         return;
     }
 
     // get the declaration's import specifiers, filtering out any
     // that have already been visited previously
     const specifiers = extractImportSpecifiers(
-        [path.node], path => resolver.resolveFile(path, sourcePath)
+        [path.node], path => pathResolver.resolve(path, sourcePath)
     ).filter(spec => !visitedNames.has(spec.importedName));
 
     // if there is no work to do, exit immediately
@@ -91,20 +91,22 @@ const ImportDeclaration = (path, state) => {
         do {
             iteration += 1;
 
-            // attempt to parse the file that is being imported
-            const ast = AST.parseFrom(path, resolver);
-            if (!ast) {
+            // attempt to get the import/export specifiers for the file being imported
+            const fileSpecifiers = specResolver.resolve(path);
+            if (!fileSpecifiers) {
                 return;
             }
+
+            const { importSpecifiers, exportSpecifiers } = fileSpecifiers;
 
             // attempt to find an export that matches our import
             debug('ITERATION', iteration);
             debug('LOOKING FOR', name);
-            debug('IMPORTS', ast.importSpecifiers());
-            debug('EXPORTS', ast.exportSpecifiers());
+            debug('IMPORTS', importSpecifiers);
+            debug('EXPORTS', exportSpecifiers);
 
             // perhaps there was a re-export, check the export specifiers
-            pointer = ast.exportSpecifiers().find(exp => exp.exportedName === name);
+            pointer = exportSpecifiers.find(exp => exp.exportedName === name);
             if (pointer) {
                 debug('FOUND IT!', pointer);
 
@@ -117,7 +119,7 @@ const ImportDeclaration = (path, state) => {
                 }
 
                 // it was re-exported! find the matching local import
-                pointer = ast.importSpecifiers().find(imp => imp.name === pointer.name);
+                pointer = importSpecifiers.find(imp => imp.name === pointer.name);
                 if (pointer) {
                     debug('FOUND THE RE-EXPORT!', pointer);
                     
