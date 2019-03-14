@@ -118,6 +118,10 @@ pluginTester({
     },
     snapshot: true,
     tests: {
+        // make sure we can handle non-javascript imports
+        'non-javascript imports':
+            `import { transformedCss } from 'testmodule'`,
+
         // make sure that we follow past the first encountered default import
         'transformDefaultImports = true: import nested default export':
             `import { defaultFirstFunc } from 'testmodule'`,

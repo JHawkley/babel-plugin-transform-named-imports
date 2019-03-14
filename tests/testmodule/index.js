@@ -5,6 +5,7 @@ import { mySecondFunc } from './mySecondFunc';
 import { myExportedSecondFunc } from './reexport';
 import { FOO } from './constants';
 import * as things from './constants';
+import transformedCss from './styles.css';
 
 export { default as byNameDefaultExportFunc } from './myFirstFunc';
 export { default as byNameDefaultNestedFunc } from './defaultExport';
@@ -23,6 +24,7 @@ export {
     myExportedSecondFunc as theExportedSecondFunc,
     defaultFirstFunc,
     things as thangs,
+    transformedCss,
 };
 
 export default () => console.log('default export');

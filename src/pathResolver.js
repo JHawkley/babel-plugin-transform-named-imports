@@ -2,16 +2,15 @@ const path = require('path');
 
 const resolver = require('eslint-import-resolver-webpack');
 
+/** @typedef {import('./index').PluginOptions} PluginOptions */
+
 /**
  * Resolves the absolute path to a file using Webpack's resolver.
  */
 class PathResolver {
     /**
      * Initializes a new instance of {@link PathResolver}.
-     * @param {Object} opts The options that were provided to the plugin.
-     * @param {string} [opts.webpackConfig] Path to the webpack configuration file to use.
-     * @param {number} [opts.webpackConfigIndex] The index of the configuration to use in
-     * case the specified configuration file is a multi-config file.
+     * @param {PluginOptions} options The options that were provided to the plugin.
      */
     constructor({webpackConfig, webpackConfigIndex}) {
         this.cache = {};

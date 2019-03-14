@@ -6,6 +6,15 @@ const Babylon = require('babylon');
 const extractExportSpecifiers = require('./extractExportSpecifiers');
 const extractImportSpecifiers = require('./extractImportSpecifiers');
 
+/** @typedef {import('./extractImportSpecifiers').ImportSpecifier} ImportSpecifier */
+/** @typedef {import('./extractExportSpecifiers').ExportSpecifier} ExportSpecifier */
+
+/**
+ * @typedef SpecifierResult
+ * @prop {ImportSpecifier[]} importSpecifiers The extracted import specifiers.
+ * @prop {ExportSpecifier[]} exportSpecifiers The extracted export specifiers.
+ */
+
 /**
  * Parses the specified JS/ES6 file with the Babylon parser
  * and returns the AST.
@@ -70,15 +79,18 @@ class SpecResolver {
      * resolving a file's path.
      */
     constructor(pathResolver) {
+        /** @type {Object.<string, SpecifierResult>} */
         this.cache = {};
+
+        /** @type {import('./pathResolver')} */
         this.pathResolver = pathResolver;
     }
 
     /**
      * Resolves a file's AST and gets the specifiers from it.
      * @param {string} filePath The absolute path to the file to resolve specifiers for.
-     * @returns An object containing the extracted specifiers or null if no AST
-     * could be resolved.
+     * @returns {?SpecifierResult} An object containing the extracted specifiers or `null`
+     * if no AST could be resolved.
      */
     resolve(filePath) {
         const cachedResult = this.cache[filePath];
@@ -97,8 +109,8 @@ class SpecResolver {
      * Gets the specifiers from a file, given its AST and the file's path.
      * @param {*} ast The AST of the file.
      * @param {string} filePath The absolute path to the file to generate specifiers for.
-     * @returns An object containing the extracted specifiers or null if the AST was not
-     * available.
+     * @returns {?SpecifierResult} An object containing the extracted specifiers or `null`
+     * if no AST could be resolved.
      */
     getSpecifiers(ast, filePath) {
         if (!ast) {

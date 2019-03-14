@@ -213,6 +213,16 @@ import byNameDefaultNestedFunc from './tests/testmodule/myFirstFunc.js';
 "
 `;
 
+exports[`non-javascript imports 1`] = `
+"
+import { transformedCss } from 'testmodule'
+
+      ↓ ↓ ↓ ↓ ↓ ↓
+
+import transformedCss from './tests/testmodule/styles.css';
+"
+`;
+
 exports[`unresolved default import 1`] = `
 "
 import React from 'reacty'
