@@ -22,6 +22,7 @@ pluginTester({
         // imports with no specifiers should be left alone
         'bare import':
             `import 'testmodule'`,
+        
         // convert this into a default import that leads to `testmodule/myFirstFunc`
         'single named import':
             `import { theFirstFunc } from 'testmodule'`,
@@ -89,11 +90,40 @@ pluginTester({
         'export-from in single line':
             `import { theInlineFirstFunc } from 'testmodule'`,
 
+        // make sure we can follow export-from, even if the name is never aliased
         'export-from un-aliased':
             `import { myThirdFunc } from 'testmodule'`,
+        
+        // make sure that we don't follow past the first encountered default import
+        'import nested default export':
+            `import { defaultFirstFunc } from 'testmodule'`,
+        
+        // make sure that we don't follow past the first encountered default import
+        'import nested default export-from':
+            `import { byNameDefaultNestedFunc } from 'testmodule'`,
 
         // make sure it doesn't get confused by confusing exports
         'confusing naming':
             `import { FOO } from 'testmodule'`,
+    },
+});
+
+// tests for when `transformDefaultImports === true`
+pluginTester({
+    plugin,
+    babelOptions: babelOptions,
+    pluginOptions: {
+        webpackConfig: path.resolve(__dirname + '/webpack.config.js'),
+        transformDefaultImports: true,
+    },
+    snapshot: true,
+    tests: {
+        // make sure that we follow past the first encountered default import
+        'transformDefaultImports = true: import nested default export':
+            `import { defaultFirstFunc } from 'testmodule'`,
+        
+        // make sure that we follow past the first encountered default import
+        'transformDefaultImports = true: import nested default export-from':
+            `import { byNameDefaultNestedFunc } from 'testmodule'`,
     },
 });

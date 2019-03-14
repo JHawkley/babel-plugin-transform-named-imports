@@ -118,7 +118,7 @@ import * as testmodule from 'testmodule'
 
       ↓ ↓ ↓ ↓ ↓ ↓
 
-import * as testmodule from 'testmodule';
+import * as testmodule from './tests/testmodule/index.js';
 "
 `;
 
@@ -152,6 +152,26 @@ import { mySecondFunc as theSecondFunc } from './tests/testmodule/mySecondFunc.j
 "
 `;
 
+exports[`import nested default export 1`] = `
+"
+import { defaultFirstFunc } from 'testmodule'
+
+      ↓ ↓ ↓ ↓ ↓ ↓
+
+import defaultFirstFunc from './tests/testmodule/defaultExport.js';
+"
+`;
+
+exports[`import nested default export-from 1`] = `
+"
+import { byNameDefaultNestedFunc } from 'testmodule'
+
+      ↓ ↓ ↓ ↓ ↓ ↓
+
+import byNameDefaultNestedFunc from './tests/testmodule/defaultExport.js';
+"
+`;
+
 exports[`multiple named imports 1`] = `
 "
 import { theFirstFunc, theSecondFunc } from 'testmodule'
@@ -170,6 +190,26 @@ import { theFirstFunc } from 'testmodule'
       ↓ ↓ ↓ ↓ ↓ ↓
 
 import theFirstFunc from './tests/testmodule/myFirstFunc.js';
+"
+`;
+
+exports[`transformDefaultImports = true: import nested default export 1`] = `
+"
+import { defaultFirstFunc } from 'testmodule'
+
+      ↓ ↓ ↓ ↓ ↓ ↓
+
+import defaultFirstFunc from './tests/testmodule/myFirstFunc.js';
+"
+`;
+
+exports[`transformDefaultImports = true: import nested default export-from 1`] = `
+"
+import { byNameDefaultNestedFunc } from 'testmodule'
+
+      ↓ ↓ ↓ ↓ ↓ ↓
+
+import byNameDefaultNestedFunc from './tests/testmodule/myFirstFunc.js';
 "
 `;
 

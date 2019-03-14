@@ -2,7 +2,6 @@ const debug = require('debug')('transform-named-imports');
 const fs = require('fs');
 const ospath = require('path');
 
-const Babylon = require('babylon');
 const types = require('babel-types');
 
 const SpecResolver = require('./specResolver');
@@ -16,6 +15,7 @@ const Program = (path, state) => {
     state.pathResolver = pathResolver;
     state.specResolver = new SpecResolver(pathResolver);
     state.sourcePath = state.file.opts.filename;
+    state.doDefaults = Boolean(state.opts.transformDefaultImports);
 
     // for every program, create some state to track identifier
     // names that have already been visited; this should prevent
@@ -24,7 +24,10 @@ const Program = (path, state) => {
 };
 
 const ImportDeclaration = (path, state) => {
-    const { visitedNames, pathResolver, specResolver, sourcePath } = state;
+    const {
+        visitedNames, sourcePath, doDefaults,
+        pathResolver, specResolver
+    } = state;
 
     // skip imports we cannot resolve
     if (!pathResolver.resolve(path.node.source.value, sourcePath)) {
@@ -35,15 +38,15 @@ const ImportDeclaration = (path, state) => {
     // that have already been visited previously
     const specifiers = extractImportSpecifiers(
         [path.node], path => pathResolver.resolve(path, sourcePath)
-    ).filter(spec => !visitedNames.has(spec.importedName));
+    ).filter(spec => !visitedNames.has(spec.name));
 
     // if there is no work to do, exit immediately
     if (specifiers.length === 0) {
         return;
     }
 
-    // leave single, default imports alone
-    if (specifiers.length === 1 && specifiers[0].type === 'default') {
+    // leave single, default imports alone if we're not transforming them
+    if (specifiers.length === 1 && !doDefaults && specifiers[0].type === 'default') {
         return;
     }
 
@@ -64,32 +67,23 @@ const ImportDeclaration = (path, state) => {
     for (let i = 0; i < specifiers.length; ++i) {
         const specifier = specifiers[i];
 
-        let exportedSpecifier;
-        let pointer;
-        let iteration = 0;
-        let path = specifier.path;
-        let name = specifier.importedName;
-
         // we are visiting this import, so add it to the visited list
-        visitedNames.add(name);
+        visitedNames.add(specifier.name);
 
-        // default imports can usually not be further resolved,
-        // bail out and leave it as is.. we do have to do a transform
-        // because the same import line might also contain named imports
-        // that get split over multiple lines
-        if (specifier.type === 'default') {
-            transforms.push(types.importDeclaration(
-                [types.importDefaultSpecifier(
-                    types.identifier(name)
-                )],
-                types.stringLiteral(makeImportPath(specifier)),
-            ));
+        let iteration = 0;
+        let exportedSpecifier = specifier;
 
-            continue;
-        }
+        while (exportedSpecifier.path) {
+            const { searchName, path, type } = exportedSpecifier;
 
-        do {
             iteration += 1;
+            debug('ITERATION', iteration);
+
+            // stop at default imports if we're not transforming them
+            if (!doDefaults && type === 'default') {
+                debug('HIT DEFAULT IMPORT');
+                break;
+            }
 
             // attempt to get the import/export specifiers for the file being imported
             const fileSpecifiers = specResolver.resolve(path);
@@ -99,51 +93,55 @@ const ImportDeclaration = (path, state) => {
 
             const { importSpecifiers, exportSpecifiers } = fileSpecifiers;
 
-            // attempt to find an export that matches our import
-            debug('ITERATION', iteration);
-            debug('LOOKING FOR', name);
+            debug('LOOKING FOR', searchName);
+            debug('SEARCHING FILE', path);
             debug('IMPORTS', importSpecifiers);
             debug('EXPORTS', exportSpecifiers);
 
-            // perhaps there was a re-export, check the export specifiers
-            pointer = exportSpecifiers.find(exp => exp.exportedName === name);
-            if (pointer) {
-                debug('FOUND IT!', pointer);
+            // search the export specifiers for a matching export
+            const expPointer = exportSpecifiers.find(exp => exp.exportedName === searchName);
+            if (expPointer) {
+                debug('FOUND IT!', expPointer);
 
                 // it could be that this export is also an import in the same line
-                if (pointer.path) {
-                    name = pointer.name;
-                    path = pointer.path;
-                    exportedSpecifier = pointer;
+                if (expPointer.path) {
+                    exportedSpecifier = expPointer;
                     continue;
                 }
 
-                // it was re-exported! find the matching local import
-                pointer = importSpecifiers.find(imp => imp.name === pointer.name);
-                if (pointer) {
-                    debug('FOUND THE RE-EXPORT!', pointer);
-                    
-                    name = pointer.importedName;
-                    path = pointer.path;
-                    exportedSpecifier = pointer;
+                // was it re-exported? find the matching local import
+                const impPointer = importSpecifiers.find(imp => imp.name === expPointer.name);
+                if (impPointer) {
+                    debug('FOUND THE RE-EXPORT!', impPointer);
+
+                    exportedSpecifier = impPointer;
                     continue;
                 }
             }
 
-            if (!pointer && !exportedSpecifier) {
-                return;
-            } else if (exportedSpecifier) {
-                break;
-            } else {
-                exportedSpecifier = pointer;
-                break;
-            }
-        } while (path);
+            break;
+        }
 
         debug('GOING WITH', exportedSpecifier);
 
         // found it, replace our import with a new one that imports
         // straight from the place where it was exported....
+
+        const importPath = makeImportPath(exportedSpecifier);
+
+        if (importPath == null) {
+            if (debug.enabled) {
+                const kvps = Object.keys(exportedSpecifier)
+                    .map(k => [k, exportedSpecifier[k]].join(' => '));
+                
+                throw new Error(
+                    ['the resolved specifier had no importable path', ...kvps].join('; ')
+                );
+            }
+
+            // abort silently in production
+            return;
+        }
 
         switch (exportedSpecifier.type) {
         case 'default':
@@ -151,7 +149,7 @@ const ImportDeclaration = (path, state) => {
                 [types.importDefaultSpecifier(
                     types.identifier(specifier.name)
                 )],
-                types.stringLiteral(makeImportPath(exportedSpecifier)),
+                types.stringLiteral(importPath),
             ));
             break;
 
@@ -160,7 +158,7 @@ const ImportDeclaration = (path, state) => {
                 [types.importNamespaceSpecifier(
                     types.identifier(specifier.name)
                 )],
-                types.stringLiteral(makeImportPath(exportedSpecifier)),
+                types.stringLiteral(importPath),
             ));
             break;
 
@@ -168,9 +166,9 @@ const ImportDeclaration = (path, state) => {
             transforms.push(types.importDeclaration(
                 [types.importSpecifier(
                     types.identifier(specifier.name),
-                    types.identifier(exportedSpecifier.name),
+                    types.identifier(exportedSpecifier.searchName),
                 )],
-                types.stringLiteral(makeImportPath(exportedSpecifier)),
+                types.stringLiteral(importPath),
             ));
             break;
         }
