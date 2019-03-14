@@ -1,5 +1,6 @@
 const fs = require('fs');
 
+const types = require('babel-types');
 const Babylon = require('babylon');
 
 const extractExportSpecifiers = require('./extractExportSpecifiers');
@@ -50,16 +51,12 @@ const parse = filePath => {
 };
 
 const isImport = node =>
-    node.type === 'ImportDeclaration';
+    types.isImportDeclaration(node);
 
 const isExport = node => {
-    switch (node.type) {
-    case 'ExportDefaultDeclaration':
-    case 'ExportNamedDeclaration':
-        return true;
-    default:
-        return false;
-    }
+    if (types.isExportDefaultDeclaration(node)) return true;
+    if (types.isExportNamedDeclaration(node)) return true;
+    return false;
 };
 
 /**
@@ -78,7 +75,7 @@ class SpecResolver {
     }
 
     /**
-     * Extracts the specifiers from the given file.
+     * Resolves a file's AST and gets the specifiers from it.
      * @param {string} filePath The absolute path to the file to resolve specifiers for.
      * @returns An object containing the extracted specifiers or null if no AST
      * could be resolved.
@@ -90,9 +87,21 @@ class SpecResolver {
         }
         
         const ast = parse(filePath);
+        const specifiers = this.getSpecifiers(ast, filePath);
 
+        this.cache[filePath] = specifiers;
+        return specifiers;
+    }
+
+    /**
+     * Gets the specifiers from a file, given its AST and the file's path.
+     * @param {*} ast The AST of the file.
+     * @param {string} filePath The absolute path to the file to generate specifiers for.
+     * @returns An object containing the extracted specifiers or null if the AST was not
+     * available.
+     */
+    getSpecifiers(ast, filePath) {
         if (!ast) {
-            this.cache[filePath] = null;
             return null;
         }
 
@@ -114,8 +123,6 @@ class SpecResolver {
             importSpecifiers: extractImportSpecifiers(importDeclarations, resolve),
             exportSpecifiers: extractExportSpecifiers(exportDeclarations, resolve),
         };
-
-        this.cache[filePath] = specifiers;
 
         return specifiers;
     }

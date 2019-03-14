@@ -1,17 +1,14 @@
-function getSimpleType({imported, type}) {
-    if (imported && imported.name === 'default') {
-        return 'default';
-    }
+const types = require('babel-types');
 
-    switch (type) {
-    case 'ImportDefaultSpecifier':
-        return 'default';
-    case 'ImportNamespaceSpecifier':
-        return 'namespace';
-    default:
-        return 'named';
-    }
-}
+const getSimpleType = node => {
+    const { imported } = node;
+
+    if (imported && imported.name === 'default') return 'default';
+    if (types.isImportDefaultSpecifier(node)) return 'default';
+    if (types.isImportNamespaceSpecifier(node)) return 'namespace';
+    if (types.isImportSpecifier(node)) return 'named';
+    return 'unknown';
+};
 
 module.exports = (declarations, resolve) => {
     const imports = [];
@@ -21,13 +18,24 @@ module.exports = (declarations, resolve) => {
         const specifiers = importNode.specifiers || [];
 
         specifiers.forEach(specifier => {
-            imports.push({
-                type: getSimpleType(specifier),
-                path: importPath,
-                name: specifier.local.name,
-                importedName: (specifier.imported || specifier.local).name,
-                originalPath: importNode.source.value,
-            });
+            const type = getSimpleType(specifier);
+
+            if (type !== 'unknown') {
+                const localName = specifier.local.name;
+                const importedName
+                    = type === 'default' ? 'default'
+                    : specifier.imported ? specifier.imported.name
+                    : specifier.local.name;
+
+                imports.push({
+                    name: localName,
+                    importedName: importedName,
+                    searchName: importedName,
+                    path: importPath,
+                    originalPath: importNode.source.value,
+                    type: type,
+                });
+            }
         });
     });
 
