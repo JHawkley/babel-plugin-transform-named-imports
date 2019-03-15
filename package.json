@@ -29,7 +29,8 @@
     "jest": "^21.2.1"
   },
   "scripts": {
-    "test": "jest"
+    "test": "jest",
+    "debug-test": "node --inspect-brk node_modules/.bin/jest --runInBand"
   },
   "keywords": [
     "babel",
