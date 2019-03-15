@@ -17,6 +17,9 @@ export { myThirdFunc } from './reexport';
 // confusingly named export
 export { myExportedSecondFunc as FOO } from './reexport';
 
+// side-effecting export
+export { FOO as sideEffectFoo } from './sideEffects';
+
 export {
     theFirstFunc,
     mySecondFunc as theSecondFunc,

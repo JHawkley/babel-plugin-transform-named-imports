@@ -16,6 +16,7 @@ pluginTester({
     babelOptions: babelOptions,
     pluginOptions: {
         webpackConfig: path.resolve(__dirname + '/webpack.config.js'),
+        sideEffects: false,
     },
     snapshot: true,
     tests: {
@@ -129,5 +130,80 @@ pluginTester({
         // make sure that we follow past the first encountered default import
         'transformDefaultImports = true: import nested default export-from':
             `import { byNameDefaultNestedFunc } from 'testmodule'`,
+    },
+});
+
+// tests for when considering side-effects
+pluginTester({
+    plugin,
+    babelOptions: babelOptions,
+    pluginOptions: {
+        webpackConfig: path.resolve(__dirname + '/webpack.config.js'),
+        sideEffects: {
+            projectPath: path.resolve(__dirname),
+        },
+    },
+    snapshot: true,
+    tests: {
+        // make sure that side-effects are not transformed
+        'side-effect checking: local side-effecting import':
+            `import { sideEffectFoo } from 'testmodule'`,
+        
+        // make sure that side-effects are not transformed
+        'side-effect checking: node-module side-effecting import':
+            `import { doTheThing } from 'side-effecty'`,
+        
+        // make sure that the side-effects in `package.json` are respected
+        'side-effect checking: pure import':
+            `import { doTheThing } from 'pure-boy'`,
+        
+        // assume side-effects when it is not specified
+        'side-effect checking: node-module unclear import':
+            `import { doTheThing } from 'unclr'`,
+    },
+});
+
+// tests for when ignoring side-effects
+pluginTester({
+    plugin,
+    babelOptions: babelOptions,
+    pluginOptions: {
+        webpackConfig: path.resolve(__dirname + '/webpack.config.js'),
+        sideEffects: {
+            projectPath: path.resolve(__dirname),
+            ignore: [
+                'side-effecty',
+                './testmodule/**/*',
+            ],
+        },
+    },
+    snapshot: true,
+    tests: {
+        // make sure that ignored side-effects are transformed
+        'side-effect ignore option: local side-effecting import':
+            `import { sideEffectFoo } from 'testmodule'`,
+        
+        // make sure that ignored side-effects are transformed
+        'side-effect ignore option: node-module side-effecting import':
+            `import { doTheThing } from 'side-effecty'`,
+    },
+});
+
+// tests for when assuming side-effects
+pluginTester({
+    plugin,
+    babelOptions: babelOptions,
+    pluginOptions: {
+        webpackConfig: path.resolve(__dirname + '/webpack.config.js'),
+        sideEffects: {
+            projectPath: path.resolve(__dirname),
+            default: false,
+        },
+    },
+    snapshot: true,
+    tests: {
+        // use the default option when side-effects are not specified
+        'side-effect default option: node-module unclear import':
+            `import { doTheThing } from 'unclr'`,
     },
 });

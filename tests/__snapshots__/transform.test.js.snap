@@ -183,6 +183,86 @@ import { mySecondFunc as theSecondFunc } from './tests/testmodule/mySecondFunc.j
 "
 `;
 
+exports[`non-javascript imports 1`] = `
+"
+import { transformedCss } from 'testmodule'
+
+      ↓ ↓ ↓ ↓ ↓ ↓
+
+import transformedCss from './tests/testmodule/styles.css';
+"
+`;
+
+exports[`side-effect checking: local side-effecting import 1`] = `
+"
+import { sideEffectFoo } from 'testmodule'
+
+      ↓ ↓ ↓ ↓ ↓ ↓
+
+import { FOO as sideEffectFoo } from './tests/testmodule/sideEffects.js';
+"
+`;
+
+exports[`side-effect checking: node-module side-effecting import 1`] = `
+"
+import { doTheThing } from 'side-effecty'
+
+      ↓ ↓ ↓ ↓ ↓ ↓
+
+import { doTheThing } from './tests/node_modules/side-effecty/index.js';
+"
+`;
+
+exports[`side-effect checking: node-module unclear import 1`] = `
+"
+import { doTheThing } from 'unclr'
+
+      ↓ ↓ ↓ ↓ ↓ ↓
+
+import { doTheThing } from './tests/node_modules/unclr/index.js';
+"
+`;
+
+exports[`side-effect checking: pure import 1`] = `
+"
+import { doTheThing } from 'pure-boy'
+
+      ↓ ↓ ↓ ↓ ↓ ↓
+
+import doTheThing from './tests/node_modules/pure-boy/doTheThing.js';
+"
+`;
+
+exports[`side-effect default option: node-module unclear import 1`] = `
+"
+import { doTheThing } from 'unclr'
+
+      ↓ ↓ ↓ ↓ ↓ ↓
+
+import doTheThing from './tests/node_modules/unclr/doTheThing.js';
+"
+`;
+
+exports[`side-effect ignore option: local side-effecting import 1`] = `
+"
+import { sideEffectFoo } from 'testmodule'
+
+      ↓ ↓ ↓ ↓ ↓ ↓
+
+import { FOO as sideEffectFoo } from './tests/testmodule/constants.js';
+"
+`;
+
+exports[`side-effect ignore option: node-module side-effecting import 1`] = `
+"
+import { doTheThing } from 'side-effecty'
+
+      ↓ ↓ ↓ ↓ ↓ ↓
+
+import doTheThing from './tests/node_modules/side-effecty/doTheThing.js';
+"
+`;
+
 exports[`single named import 1`] = `
 "
 import { theFirstFunc } from 'testmodule'
@@ -210,16 +290,6 @@ import { byNameDefaultNestedFunc } from 'testmodule'
       ↓ ↓ ↓ ↓ ↓ ↓
 
 import byNameDefaultNestedFunc from './tests/testmodule/myFirstFunc.js';
-"
-`;
-
-exports[`non-javascript imports 1`] = `
-"
-import { transformedCss } from 'testmodule'
-
-      ↓ ↓ ↓ ↓ ↓ ↓
-
-import transformedCss from './tests/testmodule/styles.css';
 "
 `;
 

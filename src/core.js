@@ -32,6 +32,12 @@ const findNextSpecifier = (state, specifier) => {
         return null;
     }
 
+    // do not resolve beyond a module with side-effects
+    if (state.sideEffects.test(path)) {
+        debug('DETECTED SIDE EFFECTS', path);
+        return null;
+    }
+
     // attempt to get the import/export specifiers for the file being imported
     const fileSpecifiers = state.specResolver.resolve(path);
     if (!fileSpecifiers) {

@@ -3,3 +3,6 @@ node_modules/
 
 # Ingore coverage results
 coverage/
+
+# Do not ignore the faux node_modules in "./tests"
+!tests/**/*

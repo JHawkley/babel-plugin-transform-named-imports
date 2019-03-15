@@ -64,6 +64,16 @@ This plugin attempts to rewrite your imports to always import from the file in w
 
 * `transformDefaultImports: boolean` - If set to `true`, the plugin will attempt to transform default imports and exports.  This may extend the build time, however it can be useful when your code makes references to `index` modules often.  The default value is `false`.
 
+* `sideEffects: boolean|Object` - If set to `false`, the plugin will disable side-effects checking.  The default value is `true`.  This value can also be set to an `Object` for more advanced configuration.  See below.
+
+* `sideEffects.enabled: boolean` - Enables or disables side-effect checking.  The default value is `true`.
+
+* `sideEffects.default: boolean` - In the case that no information on a module's side-effects can be resolved, setting this to `false` will cause the plugin to assume that there are no side-effects.  The default is `true`, which is the default behavior Webpack uses.
+
+* `sideEffects.projectPath: string` - The absolute path to your project's root.  The plugin uses the [`app-root-path`](https://www.npmjs.com/package/app-root-path) module to obtain a reasonable default, however this can be overridden if it fails to locate your project path correctly.  This is primarily used to resolve ignored modules when using `sideEffects.ignore`.
+
+* `sideEffects.ignore: string[]` - An array of node-modules, globs, or paths to ignore.  Paths and globs should be relative to `sideEffects.projectPath`.  Modules that are ignored are assumed to have no side-effects.
+
 ## FAQ
 1. **Why is my webpack configuration required?**
 

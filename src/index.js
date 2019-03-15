@@ -3,10 +3,12 @@ const ospath = require('path');
 
 const SpecResolver = require('./specResolver');
 const PathResolver = require('./pathResolver');
+const SideEffects = require('./sideEffects');
 const extractImportSpecifiers = require('./extractImportSpecifiers');
 const { abortSignal, toExportedSpecifier, toTransform } = require('./core');
 
 /** @typedef {import('./core').Specifier} Specifier */
+/** @typedef {import('./sideEffects').SideEffectOptions} SideEffectOptions */
 
 /**
  * The options recognized by the plugin.
@@ -16,6 +18,10 @@ const { abortSignal, toExportedSpecifier, toTransform } = require('./core');
  * case the specified configuration file is a multi-config file.
  * @prop {boolean} [transformDefaultImports] Whether to try and transform default
  * imports and exports.
+ * @prop {(boolean|SideEffectOptions)} [sideEffects]
+ * The options for side-effects.  When a `boolean` value, indicates whether
+ * side-effect checking is enabled.  When an object, allows customizing the
+ * behavior of side-effect checking.
  */
 
 /**
@@ -24,6 +30,7 @@ const { abortSignal, toExportedSpecifier, toTransform } = require('./core');
  * @prop {PluginOptions} opts The original options given to the plugin.
  * @prop {PathResolver} pathResolver The path-resolver.
  * @prop {SpecResolver} specResolver The specifier-resolver.
+ * @prop {SideEffects} sideEffects The side-effect checker.
  * @prop {string} sourcePath The path to the file being transformed by the plugin.
  * @prop {boolean} doDefaults Whether to transform default imports and exports.
  * @prop {Set<string>} visitedNames The identifiers that have already been processed.
@@ -43,6 +50,7 @@ const Program = (path, state) => {
 
     state.pathResolver = pathResolver;
     state.specResolver = new SpecResolver(pathResolver);
+    state.sideEffects = new SideEffects(state.opts, pathResolver);
     state.sourcePath = sourcePath;
     state.doDefaults = Boolean(state.opts.transformDefaultImports);
 

@@ -10,7 +10,7 @@ const resolver = require('eslint-import-resolver-webpack');
 class PathResolver {
     /**
      * Initializes a new instance of {@link PathResolver}.
-     * @param {PluginOptions} options The options that were provided to the plugin.
+     * @param {PluginOptions} pluginOptions The options that were provided to the plugin.
      */
     constructor({webpackConfig, webpackConfigIndex}) {
         this.cache = {};
