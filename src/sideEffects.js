@@ -3,6 +3,7 @@ const fs = require('fs');
 const ospath = require('path');
 
 const isPath = require('is-valid-path');
+const findNodeModules = require('find-node-modules');
 const findPackage = require('find-package-json');
 const mm = require('micromatch');
 
@@ -117,30 +118,41 @@ class SideEffects {
         this.default = Boolean(options.default);
         this.projectPath = options.projectPath;
 
+        // keep node-module search to the current project
+        this.nmPaths = findNodeModules({ cwd: this.projectPath })
+            .filter(path => !path.startsWith('..'));
+
         // split the ignore list into two
         this.ignoredModules = [];
         this.ignoredPatterns = [];
 
         options.ignore.forEach(str => {
             if (isPath(str)) {
-                let path;
-
                 // check for ignored node_modules
-                path = this.resolveNodePackage(str);
-                if (path) {
-                    return this.ignoredPatterns.push(path + '/**/*');
+                const packages = this.resolveNodePackages(str);
+                if (packages.length > 0) {
+                    packages.forEach(path => {
+                        this.ignoredPatterns.push(path + '/**/*');
+                    });
+                    return;
                 }
 
                 // check for specifically ignored modules
-                path = pathResolver.resolve(str, this.projectPath);
+                const path = pathResolver.resolve(str, this.projectPath);
                 if (path) {
-                    return this.ignoredModules.push(path);
+                    this.ignoredModules.push(path);
+                    return;
                 }
             }
             
             // otherwise, treat as a pattern
             this.ignoredPatterns.push(str);
         });
+
+        debug('PROJECT PATH', this.projectPath);
+        debug('NODE MODULE PATHS', this.nmPaths);
+        debug('IGNORED MODULES', this.ignoredModules);
+        debug('IGNORED PATTERNS', this.ignoredPatterns);
     }
 
     /**
@@ -217,28 +229,34 @@ class SideEffects {
     }
 
     /**
-     * Tries to resolve the path to a named node-module.
+     * Tries to resolve the paths to a named node-module.
      * @param {string} moduleName The name of the node-module.
-     * @returns {?string} The project-root-relative path to the module or `null` if
-     * no such module could be located.
+     * @returns {string[]} An array of project-root-relative paths to the module
+     * or an empty-array if no such module could be located.
      */
-    resolveNodePackage(moduleName) {
+    resolveNodePackages(moduleName) {
+        const result = [];
+
         if (ospath.isAbsolute(moduleName) || moduleName.startsWith('.')) {
-            return null;
+            return result;
         }
 
-        const packagePath = ospath.resolve('./node_modules', moduleName);
-        const path = ospath.resolve(this.projectPath, packagePath);
-        try {
-            // check if the path exists
-            // yes, this is the currently recommended way to do it
-            // `fs.exists` is deprecated
-            fs.accessSync(path);
-            return packagePath;
-        }
-        catch (error) {
-            return null;
-        }
+        this.nmPaths.forEach(nmPath => {
+            const packagePath = ospath.join(nmPath, moduleName);
+            const path = ospath.resolve(this.projectPath, packagePath);
+            try {
+                // check if the path exists
+                // yes, this is the currently recommended way to do it
+                // `fs.exists` is deprecated
+                fs.accessSync(path);
+                result.push(fixPath(packagePath));
+            }
+            catch (error) {
+                return;
+            }
+        });
+
+        return result;
     }
 
 }
