@@ -48,9 +48,9 @@ const handleOtherDeclaration = (exps, resolve, node) => {
         if (type !== 'unknown') {
             const localName = specifier.local.name;
             const exportedName
-                = type === 'default' ? 'default'
-                : specifier.exported ? specifier.exported.name
-                : specifier.local.name;
+                = specifier.exported ? specifier.exported.name
+                : type === 'default' ? 'default'
+                : localName;
 
             exps.push({
                 name: localName,
