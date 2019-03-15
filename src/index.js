@@ -5,6 +5,7 @@ const SpecResolver = require('./specResolver');
 const PathResolver = require('./pathResolver');
 const SideEffects = require('./sideEffects');
 const extractImportSpecifiers = require('./extractImportSpecifiers');
+const { appendCurPath } = require('./utils');
 const { abortSignal, toExportedSpecifier, toTransform } = require('./core');
 
 /** @typedef {import('./core').Specifier} Specifier */
@@ -67,9 +68,10 @@ const Program = (path, state) => {
             return specifier.originalPath;
         }
 
-        return './' + ospath.relative(
-            ospath.dirname(sourcePath), specifier.path
-        );
+        return appendCurPath(ospath.relative(
+            ospath.dirname(sourcePath),
+            specifier.path
+        ));
     };
 };
 

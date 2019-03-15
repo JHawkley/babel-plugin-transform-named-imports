@@ -7,6 +7,8 @@ const findNodeModules = require('find-node-modules');
 const findPackage = require('find-package-json');
 const mm = require('micromatch');
 
+const { appendCurPath } = require('./utils');
+
 /** @typedef {import('./index').PluginOptions} PluginOptions */
 /** @typedef {(boolean|string|string[])} FlagValue */
 
@@ -33,9 +35,6 @@ const baseOptions = {
     projectPath: require('app-root-path').toString(),
     ignore: [],
 };
-
-/** @type {function(string): string} */
-const fixPath = path => path.startsWith('.') ? path : './' + path;
 
 /** @type {function(string, (string|string[])): boolean} */
 const isMatch = (str, patterns) =>
@@ -205,7 +204,7 @@ class SideEffects {
         }
 
         // check if in the ignored patterns list
-        const projectRelative = fixPath(ospath.relative(this.projectPath, filePath));
+        const projectRelative = appendCurPath(ospath.relative(this.projectPath, filePath));
         return isMatch(projectRelative, this.ignoredPatterns);
     }
 
@@ -221,7 +220,7 @@ class SideEffects {
         }
 
         const flagValue = packageData.flagValue;
-        const modulePath = fixPath(ospath.relative(packageData.dir, filePath));
+        const modulePath = appendCurPath(ospath.relative(packageData.dir, filePath));
 
         debug('SIDE EFFECT DATA', { modulePath, flagValue });
 
@@ -249,7 +248,7 @@ class SideEffects {
                 // yes, this is the currently recommended way to do it
                 // `fs.exists` is deprecated
                 fs.accessSync(path);
-                result.push(fixPath(packagePath));
+                result.push(appendCurPath(packagePath));
             }
             catch (error) {
                 return;
