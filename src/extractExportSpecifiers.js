@@ -1,25 +1,33 @@
 const types = require('babel-types');
+const { emptyWebpackProps } = require('./utils');
+
+/** @typedef {import('./utils').SpecifierProps} SpecifierProps */
+/** @typedef {import('./utils').WebpackProps} WebpackProps */
 
 /**
 * @typedef ExportSpecifier
 * @prop {string} name The local name of the exported value.
 * @prop {string} exportedName The name that the value was exported under.
 * @prop {string} searchName The name to search for when locating related imports.
-* @prop {?string} path The absolute path of the imported module, if applicable.
+* @prop {?string} path The absolute path of the imported module.
+* @prop {?string} originalPath The original path that was used to import the module.
+* @prop {WebpackProps} webpack The Webpack-specific parts of the original path.
 * @prop {('default'|'named')} type The simple type.
 */
 
 /** @type {function(*): ('default'|'named')} */
 const getSimpleType = node => {
-    if (node.local.name === 'default') return 'default';
+    const { local } = node;
+
+    if (local && local.name === 'default') return 'default';
     if (types.isExportDefaultSpecifier(node)) return 'default';
     if (types.isExportSpecifier(node)) return 'named';
     return 'unknown';
 };
 
 /** @type {function(ExportSpecifier[], *): void} */
-const handleDefaultDeclaration = (exps, node) => {
-    // only try to follow if the declaration is for an identifier;
+const handleDefaultExport = (exps, node) => {
+    // only try to follow if the declaration is an identifier;
     // any other kind of declaration will stop searching at the last
     // import, in this case
     if (!types.isIdentifier(node.declaration)) {
@@ -33,14 +41,17 @@ const handleDefaultDeclaration = (exps, node) => {
         exportedName: 'default',
         searchName: localName,
         path: null,
+        originalPath: null,
+        webpack: emptyWebpackProps,
         type: 'default',
     });
 };
 
-/** @type {function(ExportSpecifier[], function(string): string, *): void} */
-const handleOtherDeclaration = (exps, resolve, node) => {
+/** @type {function(ExportSpecifier[], function(string): SpecifierProps, *): void} */
+const handleOtherExport = (exps, resolve, node) => {
     const specifiers = node.specifiers || [];
-    const importPath = node.source ? resolve(node.source.value) : null;
+    const originalPath = node.source ? node.source.value : null;
+    const { importPath, webpack } = resolve(originalPath);
 
     specifiers.forEach(specifier => {
         const type = getSimpleType(specifier);
@@ -54,9 +65,11 @@ const handleOtherDeclaration = (exps, resolve, node) => {
 
             exps.push({
                 name: localName,
-                exportedName: (specifier.exported || specifier.local).name,
+                exportedName: exportedName,
                 searchName: localName,
                 path: importPath,
+                originalPath: originalPath,
+                webpack: webpack,
                 type: type,
             });
         }
@@ -66,8 +79,8 @@ const handleOtherDeclaration = (exps, resolve, node) => {
 /**
  * Given an array of export declarations, produces an array of export specifiers.
  * @param {Array} declarations The declarations extract specifiers from.
- * @param {function(string): string} resolve A function that resolves a
- * path, relative to the module being processed, to an absolute path.
+ * @param {function(string): SpecifierProps} resolve A function that resolves
+ * a path to the {@link SpecifierProps}.
  * @returns {ExportSpecifier[]}
  */
 module.exports = (declarations, resolve) => {
@@ -75,10 +88,10 @@ module.exports = (declarations, resolve) => {
 
     declarations.forEach(node => {
         if (types.isExportDefaultDeclaration(node)) {
-            handleDefaultDeclaration(exps, node);
+            handleDefaultExport(exps, node);
         }
         else {
-            handleOtherDeclaration(exps, resolve, node);
+            handleOtherExport(exps, resolve, node);
         }
     });
 

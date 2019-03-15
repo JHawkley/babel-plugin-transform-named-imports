@@ -3,6 +3,7 @@ const fs = require('fs');
 const types = require('babel-types');
 const Babylon = require('babylon');
 
+const pathHelper = require('./utils').pathHelper;
 const extractExportSpecifiers = require('./extractExportSpecifiers');
 const extractImportSpecifiers = require('./extractImportSpecifiers');
 
@@ -117,7 +118,7 @@ class SpecResolver {
             return null;
         }
 
-        const resolve = request => this.pathResolver.resolve(request, filePath);
+        const resolve = request => pathHelper(request, filePath, this.pathResolver);
 
         const importDeclarations = [];
         const exportDeclarations = [];

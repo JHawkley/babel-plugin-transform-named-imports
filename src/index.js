@@ -5,7 +5,7 @@ const SpecResolver = require('./specResolver');
 const PathResolver = require('./pathResolver');
 const SideEffects = require('./sideEffects');
 const extractImportSpecifiers = require('./extractImportSpecifiers');
-const { appendCurPath } = require('./utils');
+const { pathHelper, appendCurPath } = require('./utils');
 const { abortSignal, toExportedSpecifier, toTransform } = require('./core');
 
 /** @typedef {import('./core').Specifier} Specifier */
@@ -68,10 +68,13 @@ const Program = (path, state) => {
             return specifier.originalPath;
         }
 
-        return appendCurPath(ospath.relative(
+        const newPath = appendCurPath(ospath.relative(
             ospath.dirname(sourcePath),
             specifier.path
         ));
+
+        const decomposed = Object.assign({ path: newPath }, specifier.webpack);
+        return pathResolver.recompose(decomposed);
     };
 };
 
@@ -91,7 +94,8 @@ const ImportDeclaration = (path, state) => {
     // get the declaration's import specifiers, filtering out any
     // that have already been visited previously
     const specifiers = extractImportSpecifiers(
-        [path.node], path => pathResolver.resolve(path, sourcePath)
+        [path.node],
+        request => pathHelper(request, sourcePath, pathResolver)
     ).filter(spec => !visitedNames.has(spec.name));
 
     // if there is no work to do, exit immediately

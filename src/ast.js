@@ -2,8 +2,11 @@ const fs = require('fs');
 
 const Babylon = require('babylon');
 
+const pathHelper_legacy = require('./utils').pathHelper_legacy;
 const extractExportSpecifiers = require('./extractExportSpecifiers');
 const extractImportSpecifiers = require('./extractImportSpecifiers');
+
+/** @typedef {import('./utils').SpecifierProps} SpecifierProps */
 
 /**
  * Small wrapper over the Babylon ES6 AST.
@@ -21,6 +24,10 @@ class AST {
         this.ast = ast;
         this.resolver = resolver;
         this.sourcePath = sourcePath;
+
+        // an adapter for the old resolver class
+        this.resolveSpecifierProps = request =>
+            pathHelper_legacy(request, sourcePath, resolver);
     }
 
     /**
@@ -72,11 +79,11 @@ class AST {
     /**
      * Resolves the absolute path to the specified file,
      * relative to the file being parsed.
-     * @param {string} path The path to resolve.
+     * @param {string} request The path to resolve.
      * @returns {string} The absolute path to the specified file or
      * null if the path could not be resolved.
      */
-    resolve(path) {
+    resolve(request) {
         return this.resolver.resolveFile(path, this.sourcePath);
     }
 
@@ -87,7 +94,7 @@ class AST {
         const declarations = this.ast.program.body
             .filter(node => node.type === 'ImportDeclaration');
 
-        return extractImportSpecifiers(declarations, this.resolve.bind(this));
+        return extractImportSpecifiers(declarations, this.resolveSpecifierProps);
     }
 
     /**
@@ -97,7 +104,7 @@ class AST {
         const declarations = this.ast.program.body
             .filter(node => node.type === 'ExportDefaultDeclaration' || node.type === 'ExportNamedDeclaration');
 
-        return extractExportSpecifiers(declarations, this.resolve.bind(this));
+        return extractExportSpecifiers(declarations, this.resolveSpecifierProps);
     }
 }
 

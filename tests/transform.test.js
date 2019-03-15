@@ -170,6 +170,24 @@ pluginTester({
             output: `import transformedCss from './tests/testmodule/styles.css';`,
         },
 
+        // stop at webpack-influenced imports
+        'should stop at webpack-influenced imports': {
+            code: `import { webpackLoadedFunc } from 'testmodule'`,
+            output: `import { myExportedSecondFunc as webpackLoadedFunc } from 'my-loader!./tests/testmodule/reexport.js';`,
+        },
+
+        // inline-loader syntax
+        'should preserve Webpack\'s inline-loader syntax': {
+            code: `import { inlineLoaderCss } from 'testmodule'`,
+            output: `import inlineLoaderCss from 'style-loader!css-loader?modules!./tests/testmodule/styles.css';`,
+        },
+        
+        // query-params syntax
+        'should preserve Webpack\'s query parameters syntax': {
+            code: `import { queryParamsCss } from 'testmodule'`,
+            output: `import queryParamsCss from './tests/testmodule/styles.css?as-js';`,
+        },
+
         // transformDefaultImports = true: import nested default export
         'transform defaults: should follow past first encountered default import, using import-from': {
             code: `import { defaultFirstFunc } from 'testmodule'`,

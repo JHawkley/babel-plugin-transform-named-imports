@@ -26,7 +26,8 @@ class Resolver extends PathResolver {
      * file could not be resolved.
      */
     resolveFile(importPath, source) {
-        return this.resolve(importPath, source);
+        const result = this.resolve(importPath, source);
+        return result ? result.path : null;
     }
 
 }

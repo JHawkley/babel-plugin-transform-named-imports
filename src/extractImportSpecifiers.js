@@ -1,5 +1,8 @@
 const types = require('babel-types');
 
+/** @typedef {import('./utils').SpecifierProps} SpecifierProps */
+/** @typedef {import('./utils').WebpackProps} WebpackProps */
+
 /**
  * @typedef ImportSpecifier
  * @prop {string} name The local name of the imported value.
@@ -7,6 +10,7 @@ const types = require('babel-types');
  * @prop {string} searchName The name to search for when locating related exports.
  * @prop {?string} path The absolute path of the imported module, if resolved.
  * @prop {string} originalPath The original path that was used to import the module.
+ * @prop {WebpackProps} webpack The Webpack-specific parts of the original path.
  * @prop {('default'|'namespaced'|'named')} type The simple type.
  */
 
@@ -24,16 +28,17 @@ const getSimpleType = node => {
 /**
  * Given an array of import declarations, produces an array of import specifiers.
  * @param {Array} declarations The declarations extract specifiers from.
- * @param {function(string): string} resolve A function that resolves a
- * path, relative to the module being processed, to an absolute path.
+ * @param {function(string): SpecifierProps} resolve A function that resolves
+ * a path to the {@link SpecifierProps}.
  * @returns {ImportSpecifier[]}
  */
 module.exports = (declarations, resolve) => {
     const imports = [];
 
     declarations.forEach(importNode => {
-        const importPath = resolve(importNode.source.value);
         const specifiers = importNode.specifiers || [];
+        const originalPath = importNode.source.value;
+        const { importPath, webpack } = resolve(originalPath);
 
         specifiers.forEach(specifier => {
             const type = getSimpleType(specifier);
@@ -43,14 +48,15 @@ module.exports = (declarations, resolve) => {
                 const importedName
                     = type === 'default' ? 'default'
                     : specifier.imported ? specifier.imported.name
-                    : specifier.local.name;
+                    : localName;
 
                 imports.push({
                     name: localName,
                     importedName: importedName,
                     searchName: importedName,
                     path: importPath,
-                    originalPath: importNode.source.value,
+                    originalPath: originalPath,
+                    webpack: webpack,
                     type: type,
                 });
             }

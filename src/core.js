@@ -24,7 +24,13 @@ const abortSignal = Symbol('abort');
  * @returns {Specifier} The next specifier in the chain or `null` if it wasn't found.
  */
 const findNextSpecifier = (state, specifier) => {
-    const { searchName, path, type } = specifier;
+    const { searchName, path, webpack, type } = specifier;
+
+    // stop at any import that is likely to be touched by a Webpack loader
+    if (webpack.loaders || webpack.query) {
+        debug('HIT WEBPACK-LOADER IMPORT');
+        return null;
+    }
 
     // stop at default imports if we're not transforming them
     if (!state.doDefaults && type === 'default') {

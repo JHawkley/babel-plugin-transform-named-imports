@@ -137,9 +137,9 @@ class SideEffects {
                 }
 
                 // check for specifically ignored modules
-                const path = pathResolver.resolve(str, this.projectPath);
-                if (path) {
-                    this.ignoredModules.push(path);
+                const resolved = pathResolver.resolve(str, this.projectPath);
+                if (resolved) {
+                    this.ignoredModules.push(resolved.path);
                     return;
                 }
             }
