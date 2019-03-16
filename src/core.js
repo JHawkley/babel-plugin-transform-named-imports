@@ -1,6 +1,6 @@
 const debug = require('debug')('transform-named-imports');
 
-const types = require('babel-types');
+const types = require('./babel-helper').types;
 
 /** @typedef {import('./index').PluginState} PluginState */
 /** @typedef {import('./extractImportSpecifiers').ImportSpecifier} ImportSpecifier */

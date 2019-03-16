@@ -1,7 +1,4 @@
-const fs = require('fs');
-
-const types = require('babel-types');
-const Babylon = require('babylon');
+const types = require('./babel-helper').types;
 
 const pathHelper = require('./utils').pathHelper;
 const extractExportSpecifiers = require('./extractExportSpecifiers');
@@ -15,50 +12,6 @@ const extractImportSpecifiers = require('./extractImportSpecifiers');
  * @prop {ImportSpecifier[]} importSpecifiers The extracted import specifiers.
  * @prop {ExportSpecifier[]} exportSpecifiers The extracted export specifiers.
  */
-
-/**
- * Parses the specified JS/ES6 file with the Babylon parser
- * and returns the AST.
- * @param filePath The path to the file to parse.
- * @returns The AST of the specified file or null if the specified
- * file could not be found or could not be parsed.
- */
-const parse = filePath => {
-    try {
-        return Babylon.parse(fs.readFileSync(filePath, 'utf-8'), {
-            sourceType: 'module',
-            plugins: [
-                'jsx',
-                'flow',
-                'estree',
-                'typescript',
-                'doExpressions',
-                'objectRestSpread',
-                'decorators',
-                'decorators2',
-                'classProperties',
-                'classPrivateProperties',
-                'classPrivateMethods',
-                'exportExtensions',
-                'asyncGenerators',
-                'functionBind',
-                'functionSent',
-                'dynamicImport',
-                'numericSeparator',
-                'optionalChaining',
-                'importMeta',
-                'bigInt',
-                'optionalCatchBinding',
-                'throwExpressions',
-                'pipelineOperator',
-                'nullishCoalescingOperator',
-            ],
-        });
-    }
-    catch (error) {
-        return null;
-    }
-};
 
 const isImport = node =>
     types.isImportDeclaration(node);
@@ -76,14 +29,16 @@ class SpecResolver {
 
     /**
      * Initializes a new instance of {@link SpecResolver}.
+     * @param {function(string): *} parserFn A function that can parse a file into
+     * a Babel AST.
      * @param {import('./pathResolver')} pathResolver The path-resolver to use when
      * resolving a file's path.
      */
-    constructor(pathResolver) {
+    constructor(parserFn, pathResolver) {
         /** @type {Object.<string, SpecifierResult>} */
         this.cache = {};
 
-        /** @type {import('./pathResolver')} */
+        this.parse = parserFn;
         this.pathResolver = pathResolver;
     }
 
@@ -99,7 +54,7 @@ class SpecResolver {
             return cachedResult;
         }
         
-        const ast = parse(filePath);
+        const ast = this.parse(filePath);
         const specifiers = this.getSpecifiers(ast, filePath);
 
         this.cache[filePath] = specifiers;

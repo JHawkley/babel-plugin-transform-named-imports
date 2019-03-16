@@ -1,4 +1,3 @@
-const fs = require('fs');
 const ospath = require('path');
 
 const SpecResolver = require('./specResolver');
@@ -48,9 +47,10 @@ const Program = (path, state) => {
     // setup configuration once per program
     const pathResolver = new PathResolver(state.opts);
     const sourcePath = state.file.opts.filename;
+    const parserFn = require('./babel-helper').makeParser();
 
     state.pathResolver = pathResolver;
-    state.specResolver = new SpecResolver(pathResolver);
+    state.specResolver = new SpecResolver(parserFn, pathResolver);
     state.sideEffects = new SideEffects(state.opts, pathResolver);
     state.sourcePath = sourcePath;
     state.doDefaults = Boolean(state.opts.transformDefaultImports);

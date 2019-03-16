@@ -1,7 +1,4 @@
-const fs = require('fs');
-
-const Babylon = require('babylon');
-
+const babelParser = require('./babel-helper').makeParser();
 const pathHelper_legacy = require('./utils').pathHelper_legacy;
 const extractExportSpecifiers = require('./extractExportSpecifiers');
 const extractImportSpecifiers = require('./extractImportSpecifiers');
@@ -31,7 +28,7 @@ class AST {
     }
 
     /**
-     * Parses the specified JS/ES6 file with the Babylon parser
+     * Parses the specified JS/ES6 file with the Babel parser
      * and returns the AST.
      * @param {string} filePath The path to the file to parse.
      * @param {import('./resolver')} resolver The resolver to use to resolve the specified file.
@@ -39,41 +36,8 @@ class AST {
      * file could not be found or could not be parsed.
      */
     static parseFrom(filePath, resolver) {
-        try {
-            const ast = Babylon.parse(fs.readFileSync(filePath, 'utf-8'), {
-                sourceType: 'module',
-                plugins: [
-                    'jsx',
-                    'flow',
-                    'estree',
-                    'typescript',
-                    'doExpressions',
-                    'objectRestSpread',
-                    'decorators',
-                    'decorators2',
-                    'classProperties',
-                    'classPrivateProperties',
-                    'classPrivateMethods',
-                    'exportExtensions',
-                    'asyncGenerators',
-                    'functionBind',
-                    'functionSent',
-                    'dynamicImport',
-                    'numericSeparator',
-                    'optionalChaining',
-                    'importMeta',
-                    'bigInt',
-                    'optionalCatchBinding',
-                    'throwExpressions',
-                    'pipelineOperator',
-                    'nullishCoalescingOperator',
-                ],
-            });
-
-            return new AST(ast, resolver, filePath);
-        } catch (error) {
-            return null;
-        }
+        const ast = babelParser(filePath);
+        return ast ? new AST(ast, resolver, filePath) : null;
     }
 
     /**

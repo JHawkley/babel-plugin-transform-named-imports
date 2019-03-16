@@ -1,4 +1,4 @@
-const types = require('babel-types');
+const types = require('./babel-helper').types;
 const { emptyWebpackProps } = require('./utils');
 
 /** @typedef {import('./utils').SpecifierProps} SpecifierProps */
