@@ -1,5 +1,4 @@
 const debug = require('debug')('transform-named-imports');
-const fs = require('fs');
 const ospath = require('path');
 
 const isPath = require('is-valid-path');
@@ -7,7 +6,7 @@ const findNodeModules = require('find-node-modules');
 const findPackage = require('find-package-json');
 const mm = require('micromatch');
 
-const { appendCurPath } = require('./utils');
+const { appendCurPath, pathExists } = require('./utils');
 
 /** @typedef {import('./options').PluginOptions} PluginOptions */
 /** @typedef {(boolean|string|string[])} FlagValue */
@@ -195,15 +194,8 @@ class SideEffects {
         this.nmPaths.forEach(nmPath => {
             const packagePath = ospath.join(nmPath, moduleName);
             const path = ospath.resolve(this.projectPath, packagePath);
-            try {
-                // check if the path exists
-                // yes, this is the currently recommended way to do it
-                // `fs.exists` is deprecated
-                fs.accessSync(path);
+            if (pathExists(path)) {
                 result.push(appendCurPath(packagePath));
-            }
-            catch (error) {
-                return;
             }
         });
 

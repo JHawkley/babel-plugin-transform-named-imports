@@ -1,3 +1,5 @@
+const fs = require('fs');
+
 /** @typedef {import('./pathResolver').DecomposedRequest} DecomposedRequest */
 
 /**
@@ -74,9 +76,29 @@ const pathHelper_legacy = (request, issuer, resolver) => {
  */
 const appendCurPath = path => path.startsWith('.') ? path : './' + path;
 
+/**
+ * Checks if a path exists; basically the same as `fs.exists` but
+ * uses the non-deprecated method of checking for a path's existence.
+ * @param {string} path The path whose existence is in question.
+ * @returns {boolean}
+ */
+const pathExists = path => {
+    try {
+        // check if the path exists
+        // yes, this is the currently recommended way to do it;
+        // `fs.exists` is deprecated
+        fs.accessSync(path);
+        return true;
+    }
+    catch (error) {
+        return false;
+    }
+};
+
 module.exports = {
     emptyWebpackProps,
     pathHelper,
     pathHelper_legacy,
     appendCurPath,
+    pathExists,
 };
