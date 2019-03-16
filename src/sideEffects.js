@@ -9,7 +9,7 @@ const mm = require('micromatch');
 
 const { appendCurPath } = require('./utils');
 
-/** @typedef {import('./index').PluginOptions} PluginOptions */
+/** @typedef {import('./options').PluginOptions} PluginOptions */
 /** @typedef {(boolean|string|string[])} FlagValue */
 
 /**
@@ -17,24 +17,6 @@ const { appendCurPath } = require('./utils');
  * @prop {string} dir The directory containing the `package.json` file.
  * @prop {FlagValue} flagValue The value of the `sideEffects` property.
  */
-
-/**
- * @typedef SideEffectOptions
- * @prop {boolean} [enabled] Whether side-effect checking is enabled.
- * @prop {boolean} [default] The default assumption to make when a package has no
- * information on whether it has side-effects.
- * @prop {string} [projectPath] The absolute path of the project's root.
- * @prop {string[]} [ignore] A list of Node modules, globs, or paths to ignore
- * during a side-effect test.
- */
-
-/** @type {SideEffectOptions} */
-const baseOptions = {
-    enabled: true,
-    default: true,
-    projectPath: require('app-root-path').toString(),
-    ignore: [],
-};
 
 /** @type {function(string, (string|string[])): boolean} */
 const isMatch = (str, patterns) =>
@@ -65,39 +47,6 @@ const hasSideEffectsImpl = (modulePath, flagValue, defaultValue) => {
     }
 };
 
-/** @type {function(SideEffectOptions): SideEffectOptions} */
-const validateOptions = config => {
-    if (!config) {
-        return baseOptions;
-    }
-
-    if (typeof config !== 'object' || Array.isArray(config)) {
-        throw new Error('the `sideEffects` option can only be an object or a boolean value');
-    }
-
-    if (config.projectPath != null) {
-        if (typeof config.projectPath !== 'string') {
-            throw new Error('the `sideEffects.projectPath` option must be a string when provided');
-        }
-
-        if (!ospath.isAbsolute(config.projectPath)) {
-            throw new Error('the `sideEffects.projectPath` option must be an absolute path');
-        }
-    }
-
-    if (config.ignore != null) {
-        if (!Array.isArray(config.ignore)) {
-            config.ignore = [config.ignore];
-        }
-
-        if (!config.ignore.every(path => typeof path === 'string')) {
-            throw new Error('the `sideEffects.ignore` option can only contain strings');
-        }
-    }
-
-    return Object.assign({}, baseOptions, config);
-};
-
 /**
  * Determines whether a module has side-effects.
  */
@@ -105,16 +54,19 @@ class SideEffects {
 
     /**
      * Creates an instance of {@link SideEffects}.
-     * @param {PluginOptions} pluginOptions The options that were provided to the plugin.
+     * @param {PluginOptions} options The options that were provided to the plugin.
      * @param {import('./pathResolver')} pathResolver The path-resolver.
      * @memberof SideEffects
      */
-    constructor({sideEffects: options}, pathResolver) {
-        options = validateOptions(typeof options === 'boolean' ? { enabled: options } : options);
+    constructor(options, pathResolver) {
+        // pull out the side-effect options
+        options = options.sideEffects;
 
+        /** @type {Object.<string, PackageData>} */
         this.cache = {};
-        this.enabled = Boolean(options.enabled);
-        this.default = Boolean(options.default);
+
+        this.enabled = options.enabled;
+        this.default = options.default;
         this.projectPath = options.projectPath;
 
         // keep node-module search to the current project

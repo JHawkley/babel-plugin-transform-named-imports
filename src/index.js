@@ -1,5 +1,6 @@
 const ospath = require('path');
 
+const validateOptions = require('./options').validate;
 const SpecResolver = require('./specResolver');
 const PathResolver = require('./pathResolver');
 const SideEffects = require('./sideEffects');
@@ -8,21 +9,7 @@ const { pathHelper, appendCurPath } = require('./utils');
 const { abortSignal, toExportedSpecifier, toTransform } = require('./core');
 
 /** @typedef {import('./core').Specifier} Specifier */
-/** @typedef {import('./sideEffects').SideEffectOptions} SideEffectOptions */
-
-/**
- * The options recognized by the plugin.
- * @typedef PluginOptions
- * @prop {string} [webpackConfig] Path to the webpack configuration file to use.
- * @prop {number} [webpackConfigIndex] The index of the configuration to use in
- * case the specified configuration file is a multi-config file.
- * @prop {boolean} [transformDefaultImports] Whether to try and transform default
- * imports and exports.
- * @prop {(boolean|SideEffectOptions)} [sideEffects]
- * The options for side-effects.  When a `boolean` value, indicates whether
- * side-effect checking is enabled.  When an object, allows customizing the
- * behavior of side-effect checking.
- */
+/** @typedef {import('./options').PluginOptions} PluginOptions */
 
 /**
  * The state of the plugin.
@@ -45,15 +32,17 @@ const { abortSignal, toExportedSpecifier, toTransform } = require('./core');
  */
 const Program = (path, state) => {
     // setup configuration once per program
-    const pathResolver = new PathResolver(state.opts);
+    const options = validateOptions(state.opts);
+
+    const pathResolver = new PathResolver(options);
     const sourcePath = state.file.opts.filename;
     const parserFn = require('./babel-helper').makeParser();
 
     state.pathResolver = pathResolver;
     state.specResolver = new SpecResolver(parserFn, pathResolver);
-    state.sideEffects = new SideEffects(state.opts, pathResolver);
+    state.sideEffects = new SideEffects(options, pathResolver);
     state.sourcePath = sourcePath;
-    state.doDefaults = Boolean(state.opts.transformDefaultImports);
+    state.doDefaults = options.transformDefaultImports;
 
     // for every program, create some state to track identifier
     // names that have already been visited; this should prevent

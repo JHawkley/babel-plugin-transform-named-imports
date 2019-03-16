@@ -321,3 +321,25 @@ pluginTester({
         },
     },
 });
+
+// tests to ensure options validation works
+pluginTester({
+    plugin,
+    babel,
+    babelOptions: babelOptions,
+    pluginOptions: {
+        webpackConfig: path.resolve(__dirname + '/webpack.config.js'),
+        sideEffects: {
+            // this is an invalid option; not an absolute path
+            projectPath: './tests',
+            default: false,
+        },
+    },
+    tests: {
+        // side-effect default option: node-module unclear import
+        'should throw an error on an invalid option': {
+            code: `import "testmodule"`,
+            error: 'the `sideEffects.projectPath` option must be an absolute path',
+        },
+    },
+});

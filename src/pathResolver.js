@@ -4,7 +4,7 @@ const resolver = require('eslint-import-resolver-webpack');
 
 const rePath = /^(.*!)?(.*?)(\?.*)?$/;
 
-/** @typedef {import('./index').PluginOptions} PluginOptions */
+/** @typedef {import('./options').PluginOptions} PluginOptions */
 
 /**
  * @typedef DecomposedRequest
@@ -20,13 +20,13 @@ class PathResolver {
 
     /**
      * Initializes a new instance of {@link PathResolver}.
-     * @param {PluginOptions} pluginOptions The options that were provided to the plugin.
+     * @param {PluginOptions} options The options that were provided to the plugin.
      */
-    constructor({webpackConfig, webpackConfigIndex}) {
+    constructor(options) {
         this.cache = {};
         this.settings = {
-            config: path.resolve(webpackConfig || './webpack.config.js'),
-            'config-index': webpackConfigIndex || 0,
+            config: path.resolve(options.webpackConfig),
+            'config-index': options.webpackConfigIndex,
         };
     }
 
