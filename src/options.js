@@ -1,4 +1,6 @@
+const fs = require('fs');
 const ospath = require('path');
+const pathExists = require('./utils').pathExists;
 
 /**
  * @typedef SideEffectOptions
@@ -16,6 +18,9 @@ const ospath = require('path');
  * @prop {string} [webpackConfig] Path to the webpack configuration file to use.
  * @prop {number} [webpackConfigIndex] The index of the configuration to use in
  * case the specified configuration file is a multi-config file.
+ * @prop {string|Object} [babelConfig] The Babel configuration to use when
+ * parsing a file to an AST, either a path to a config file or an object that
+ * will be programmatically supplied to Babel.
  * @prop {boolean} [transformDefaultImports] Whether to try and transform default
  * imports and exports.
  * @prop {(boolean|SideEffectOptions)} [sideEffects]
@@ -36,6 +41,7 @@ const defaultSideEffectsOptions = Object.freeze({
 const defaultPluginOptions = Object.freeze({
     webpackConfig: './webpack.config.js',
     webpackConfigIndex: 0,
+    babelConfig: null,
     transformDefaultImports: false,
     sideEffects: defaultSideEffectsOptions,
 });
@@ -108,6 +114,60 @@ const validate_PluginOptions = (key, options) => {
         }
         
         throw new Error('the `webpackConfigIndex` option must be a number greater than `0`');
+    
+    case 'babelConfig':
+        switch (typeof value) {
+        case 'string':
+            value = ospath.resolve(value);
+
+            if (!pathExists(value)) {
+                throw new Error([
+                    'the `babelConfig` option was supplied a string that does not',
+                    'resolve to an existing file'
+                ].join(' '));
+            }
+
+            if (require('./babel-helper').checkVersion('7.0.0')) {
+                // Babel 7 allows a configuration file to be specified
+                options[key] = { configFile: value };
+                return;
+            }
+            else {
+                // Babel 6 will need to have the options parsed first
+                try {
+                    const parsed = ospath.parse(value);
+                    if (parsed.base === '.babelrc' || parsed.ext.search(/^\.json$/i)) {
+                        value = JSON.parse(fs.readFileSync(value, 'utf-8'));
+                    }
+                    else if (parsed.ext.search(/^\.js$/i)) {
+                        value = require(value);
+                    }
+
+                    if (typeof value === 'object' && !Array.isArray(value)) {
+                        options[key] = value;
+                        return;
+                    }
+                }
+                catch (error) { void 0; }
+
+                throw new Error([
+                    'the `babelConfig` option was supplied a string that did not',
+                    'resolve to a file that could be treated as a Babel',
+                    'configuration file'
+                ].join(' '));
+            }
+        
+        case 'object':
+            if (!Array.isArray(value)) return;
+            throw new Error('the `babelConfig` option cannot be an array');
+        
+        default:
+            throw new Error([
+                'the `babelConfig` option must be a string or an object',
+                'use a string to specify the path to a configuration file',
+                'use an object to provide options directly to Babel'
+            ].join('; '));
+        }
 
     case 'transformDefaultImports':
         options[key] = Boolean(value);

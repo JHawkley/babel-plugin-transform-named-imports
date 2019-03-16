@@ -4,39 +4,47 @@ const pluginTester = require('babel-plugin-tester');
 const plugin = require('../src/index.js');
 const babel = require('../src/babel-helper').getBabel();
 
-const createBabelOptions = () => {
+// creates options that are compatible with the tests
+const createBabelOptions = options => {
+    let baseOptions;
+
     if (process.env.FORCE_BABEL_SEVEN === 'true') {
         // the Babel presets are deprecated, so we're loading in
         // the relevant plugins individually
-        return {
-            filename: 'currentFile.js',
+        baseOptions = {
+            configFile: false,
+            babelrc: false,
             plugins: [
                 '@babel/plugin-proposal-export-namespace-from',
                 '@babel/plugin-syntax-dynamic-import',
                 '@babel/plugin-syntax-import-meta',
             ],
-        }
+        };
     }
     else {
-        const createBabylonOptions = require('babylon-options');
-
-        return {
-            filename: 'currentFile.js',
-            parserOpts: createBabylonOptions({
-                stage: 2
+        baseOptions = {
+            babelrc: false,
+            parserOpts: require('babylon-options')({
+                stage: 2,
+                plugins: ['exportExtensions', 'dynamicImport'],
             }),
         };
     }
+
+    return Object.assign(baseOptions, options);
 };
 
-const babelOptions = createBabelOptions();
+const babelOptions = createBabelOptions({
+    filename: 'currentFile.js',
+});
 
 pluginTester({
     plugin,
     babel,
-    babelOptions: babelOptions,
+    babelOptions,
     pluginOptions: {
         webpackConfig: path.resolve(__dirname + '/webpack.config.js'),
+        babelConfig: createBabelOptions(),
         sideEffects: false,
     },
     tests: {
@@ -168,7 +176,6 @@ pluginTester({
         },
 
         // confusing naming
-        // make sure it doesn't get confused by confusing exports
         'should be able to resolve properly despite confusing naming': {
             code: `import { FOO } from "testmodule"`,
             output: `import { mySecondFunc as FOO } from "./tests/testmodule/mySecondFunc.js";`,
@@ -180,9 +187,10 @@ pluginTester({
 pluginTester({
     plugin,
     babel,
-    babelOptions: babelOptions,
+    babelOptions,
     pluginOptions: {
         webpackConfig: path.resolve(__dirname + '/webpack.config.js'),
+        babelConfig: createBabelOptions(),
         transformDefaultImports: true,
     },
     tests: {
@@ -228,9 +236,10 @@ pluginTester({
 pluginTester({
     plugin,
     babel,
-    babelOptions: babelOptions,
+    babelOptions,
     pluginOptions: {
         webpackConfig: path.resolve(__dirname + '/webpack.config.js'),
+        babelConfig: createBabelOptions(),
         sideEffects: {
             projectPath: path.resolve(__dirname),
         },
@@ -266,9 +275,10 @@ pluginTester({
 pluginTester({
     plugin,
     babel,
-    babelOptions: babelOptions,
+    babelOptions,
     pluginOptions: {
         webpackConfig: path.resolve(__dirname + '/webpack.config.js'),
+        babelConfig: createBabelOptions(),
         sideEffects: {
             projectPath: path.resolve(__dirname),
             ignore: [
@@ -296,9 +306,10 @@ pluginTester({
 pluginTester({
     plugin,
     babel,
-    babelOptions: babelOptions,
+    babelOptions,
     pluginOptions: {
         webpackConfig: path.resolve(__dirname + '/webpack.config.js'),
+        babelConfig: createBabelOptions(),
         sideEffects: {
             projectPath: path.resolve(__dirname),
             default: false,
@@ -317,9 +328,10 @@ pluginTester({
 pluginTester({
     plugin,
     babel,
-    babelOptions: babelOptions,
+    babelOptions,
     pluginOptions: {
         webpackConfig: path.resolve(__dirname + '/webpack.config.js'),
+        babelConfig: createBabelOptions(),
         sideEffects: {
             // this is an invalid option; not an absolute path
             projectPath: './tests',

@@ -33,10 +33,10 @@ const { abortSignal, toExportedSpecifier, toTransform } = require('./core');
 const Program = (path, state) => {
     // setup configuration once per program
     const options = validateOptions(state.opts);
+    const sourcePath = state.file.opts.filename;
 
     const pathResolver = new PathResolver(options);
-    const sourcePath = state.file.opts.filename;
-    const parserFn = require('./babel-helper').makeParser();
+    const parserFn = require('./babel-helper').makeParser(options);
 
     state.pathResolver = pathResolver;
     state.specResolver = new SpecResolver(parserFn, pathResolver);

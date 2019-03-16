@@ -1,4 +1,5 @@
 const debug = require('debug')('transform-named-imports');
+const compareVersions = require('compare-versions');
 
 // a little helper for working with Babel;
 // can use either `@babel/core` via the `babel-bridge` or
@@ -8,23 +9,44 @@ const debug = require('debug')('transform-named-imports');
 // `FORCE_BABEL_SEVEN` environment variable to "true";
 // useful for testing
 
-function getBabel() {
-    if (process.env.FORCE_BABEL_SEVEN === 'true') {
-        return require('@babel/core');
-    }
+/** @typedef {import('./options').PluginOptions} PluginOptions */
 
-    return require('babel-core');
-}
+/**
+ * Gets the `babel-core` module.  Be mindful of the version returned,
+ * as it could be for either Babel 6 or Babel 7.
+ * @returns The `babel-core` module.
+ */
+const getBabel = (() => {
+    const needSeven = process.env.FORCE_BABEL_SEVEN === 'true';
+    let babel = null;
+
+    return function getBabel() {
+        if (babel) return babel;
+
+        babel = require(needSeven ? '@babel/core' : 'babel-core');
+        return babel;
+    }
+})();
+
+/**
+ * Checks that the version of Babel in use meets a minimum version.
+ * @param {string} neededVersion A semver string.
+ * @returns {boolean} Whether Babel meets or exceeds the needed version.
+ */
+const checkVersion = neededVersion =>
+    compareVersions(getBabel().version, neededVersion) >= 0;
 
 /**
  * Creates a function that can parse a file into a Babel AST.
+ * @param {PluginOptions} options The options that were provided to the plugin.
  * @returns {function(string): *} A function that takes an absolute
  * path and returns a Babel AST.
  * @throws When no parser could be generated from the Node packages
  * installed.
  */
-function makeParser() {
+const makeParser = options => {
     const Babel = getBabel();
+    const baseConfig = options.babelConfig;
 
     // version 7 introduced the `parseSync` function
     if (typeof Babel.parseSync === 'function') {
@@ -32,7 +54,7 @@ function makeParser() {
 
         return function babel7Parse(filePath) {
             try {
-                return Babel.parseSync(fs.readFileSync(filePath, 'utf-8'), {
+                const options = Object.assign({}, baseConfig, {
                     caller: {
                         name: 'transform-named-imports',
                         supportsStaticESM: true,
@@ -40,6 +62,8 @@ function makeParser() {
                     filename: filePath,
                     sourceType: 'module',
                 });
+
+                return Babel.parseSync(fs.readFileSync(filePath, 'utf-8'), options);
             } catch (error) {
                 debug('BABEL 7 PARSER ERROR', error);
                 return null;
@@ -51,12 +75,14 @@ function makeParser() {
     // this should not perform any transformations
     return function babel6Parse(filePath) {
         try {
-            const result = Babel.transformFileSync(filePath, {
+            const options = Object.assign({}, baseConfig, {
+                filename: filePath,
                 sourceType: 'module',
                 ast: true,
                 code: false,
             });
 
+            const result = Babel.transformFileSync(filePath, options);
             return result && result.ast ? result.ast : null;
         }
         catch (error) {
@@ -68,6 +94,7 @@ function makeParser() {
 
 module.exports = {
     getBabel,
+    checkVersion,
     makeParser,
     types: getBabel().types,
 };
