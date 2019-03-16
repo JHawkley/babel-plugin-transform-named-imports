@@ -32,6 +32,12 @@ const findNextSpecifier = (state, specifier) => {
         return null;
     }
 
+    // stop at namespaced imports; there's nothing more that can be resolved
+    if (type === 'namespace') {
+        debug('HIT NAMESPACE IMPORT');
+        return null;
+    }
+
     // stop at default imports if we're not transforming them
     if (!state.doDefaults && type === 'default') {
         debug('HIT DEFAULT IMPORT');

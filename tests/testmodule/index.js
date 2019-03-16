@@ -23,6 +23,9 @@ export { myExportedSecondFunc as FOO } from './reexport';
 // side-effecting export
 export { FOO as sideEffectFoo } from './sideEffects';
 
+// namespaced export-from
+export * as thungs from './constants';
+
 export {
     theFirstFunc,
     mySecondFunc as theSecondFunc,

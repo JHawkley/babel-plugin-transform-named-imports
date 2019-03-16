@@ -12,15 +12,16 @@ const { emptyWebpackProps } = require('./utils');
 * @prop {?string} path The absolute path of the imported module.
 * @prop {?string} originalPath The original path that was used to import the module.
 * @prop {WebpackProps} webpack The Webpack-specific parts of the original path.
-* @prop {('default'|'named')} type The simple type.
+* @prop {('default'|'namespace'|'named')} type The simple type.
 */
 
-/** @type {function(*): ('default'|'named')} */
+/** @type {function(*): ('default'|'namespace'|'named')} */
 const getSimpleType = node => {
     const { local } = node;
 
     if (local && local.name === 'default') return 'default';
     if (types.isExportDefaultSpecifier(node)) return 'default';
+    if (types.isExportNamespaceSpecifier(node)) return 'namespace';
     if (types.isExportSpecifier(node)) return 'named';
     return 'unknown';
 };
@@ -57,7 +58,7 @@ const handleOtherExport = (exps, resolve, node) => {
         const type = getSimpleType(specifier);
 
         if (type !== 'unknown') {
-            const localName = specifier.local.name;
+            const localName = (specifier.local || specifier.exported).name;
             const exportedName
                 = specifier.exported ? specifier.exported.name
                 : type === 'default' ? 'default'

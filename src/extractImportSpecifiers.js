@@ -11,10 +11,10 @@ const types = require('./babel-helper').types;
  * @prop {?string} path The absolute path of the imported module, if resolved.
  * @prop {string} originalPath The original path that was used to import the module.
  * @prop {WebpackProps} webpack The Webpack-specific parts of the original path.
- * @prop {('default'|'namespaced'|'named')} type The simple type.
+ * @prop {('default'|'namespace'|'named')} type The simple type.
  */
 
-/** @type {function(*): ('default'|'namespaced'|'named')} */
+/** @type {function(*): ('default'|'namespace'|'named')} */
 const getSimpleType = node => {
     const { imported } = node;
 

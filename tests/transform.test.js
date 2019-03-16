@@ -180,6 +180,18 @@ pluginTester({
             code: `import { FOO } from "testmodule"`,
             output: `import { mySecondFunc as FOO } from "./tests/testmodule/mySecondFunc.js";`,
         },
+
+        // import of a namespaced export
+        'should be able to handle namespaced export-from': {
+            code: `import { thungs } from "testmodule"`,
+            output: `import * as thungs from "./tests/testmodule/constants.js";`,
+        },
+
+        // aliased import of a namespaced export
+        'should be able to handle an aliased namespaced export-from': {
+            code: `import { thungs as myAliasedThungs } from "testmodule"`,
+            output: `import * as myAliasedThungs from "./tests/testmodule/constants.js";`,
+        },
     },
 });
 
