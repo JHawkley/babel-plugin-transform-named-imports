@@ -1,10 +1,17 @@
 const path = require('path');
 
-const resolver = require('eslint-import-resolver-webpack');
-
 const rePath = /^(.*!)?(.*?)(\?.*)?$/;
 
-/** @typedef {import('./options').PluginOptions} PluginOptions */
+/**
+ * A function that takes the relative path of a `request` and the
+ * absolute path of the `issuer` and resolves the absolute path to the
+ * requested module.
+ * @callback ResolvePathFn
+ * @param {string} request The relative path of the requested module.
+ * @param {string} issuer The absolute path to the issuer of the request.
+ * @returns {?string} The absolute path to the requested module or `null`
+ * if it could not be located.
+ */
 
 /**
  * @typedef DecomposedRequest
@@ -19,15 +26,30 @@ const rePath = /^(.*!)?(.*?)(\?.*)?$/;
 class PathResolver {
 
     /**
-     * Initializes a new instance of {@link PathResolver}.
-     * @param {PluginOptions} options The options that were provided to the plugin.
+     * Creates a path-resolver that uses the `eslint-import-resolver-webpack`
+     * module.  This is used if `advanced.pathResolver` is not provided
+     * by the options.
+     * @static
+     * @param {Object} webpackConfig The Webpack config to use.
+     * @returns {ResolvePathFn}
      */
-    constructor(options) {
-        this.cache = {};
-        this.settings = {
-            config: path.resolve(options.webpackConfig),
-            'config-index': options.webpackConfigIndex,
+    static defaultResolver(webpackConfig) {
+        const resolver = require('eslint-import-resolver-webpack');
+        const settings = { config: webpackConfig };
+
+        return function defaultResolverFn(request, issuer) {
+            const result = resolver.resolve(request, issuer, settings);
+            return result.found ? result.path : null;
         };
+    }
+
+    /**
+     * Initializes a new instance of {@link PathResolver}.
+     * @param {ResolvePathFn} resolvePathFn The path resolver function to use.
+     */
+    constructor(resolvePathFn) {
+        this.cache = {};
+        this.resolvePathFn = resolvePathFn;
     }
 
     /**
@@ -49,8 +71,7 @@ class PathResolver {
             return this.integrate(cachedResult, decomposed);
         }
 
-        const result = resolver.resolve(requestPath, issuer, this.settings);
-        const resolvedPath = result.found ? result.path : null;
+        const resolvedPath = this.resolvePathFn(requestPath, issuer);
 
         this.cache[cacheKey] = resolvedPath;
         return this.integrate(resolvedPath, decomposed);

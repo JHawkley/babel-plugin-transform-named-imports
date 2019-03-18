@@ -2,7 +2,7 @@ const path = require('path');
 const pluginTester = require('babel-plugin-tester');
 
 const plugin = require('../src/index.js');
-const babel = require('../src/babel-helper').getBabel();
+const babel = require('../src/babelHelper').getBabel();
 
 // creates options that are compatible with the tests
 const createBabelOptions = options => {
@@ -44,8 +44,8 @@ pluginTester({
     babelOptions,
     pluginOptions: {
         webpackConfig: path.resolve(__dirname + '/webpack.config.js'),
-        babelConfig: createBabelOptions(),
         sideEffects: false,
+        advanced: { babelConfig: createBabelOptions() },
     },
     tests: {
         // bare import
@@ -202,8 +202,8 @@ pluginTester({
     babelOptions,
     pluginOptions: {
         webpackConfig: path.resolve(__dirname + '/webpack.config.js'),
-        babelConfig: createBabelOptions(),
         transformDefaultImports: true,
+        advanced: { babelConfig: createBabelOptions() },
     },
     tests: {
         // non-javascript imports
@@ -251,10 +251,8 @@ pluginTester({
     babelOptions,
     pluginOptions: {
         webpackConfig: path.resolve(__dirname + '/webpack.config.js'),
-        babelConfig: createBabelOptions(),
-        sideEffects: {
-            projectPath: path.resolve(__dirname),
-        },
+        sideEffects: { projectPath: path.resolve(__dirname) },
+        advanced: { babelConfig: createBabelOptions() },
     },
     tests: {
         // side-effect checking: local side-effecting import
@@ -290,7 +288,6 @@ pluginTester({
     babelOptions,
     pluginOptions: {
         webpackConfig: path.resolve(__dirname + '/webpack.config.js'),
-        babelConfig: createBabelOptions(),
         sideEffects: {
             projectPath: path.resolve(__dirname),
             ignore: [
@@ -298,6 +295,7 @@ pluginTester({
                 './testmodule/**/*',
             ],
         },
+        advanced: { babelConfig: createBabelOptions() },
     },
     tests: {
         // side-effect ignore option: local side-effecting import
@@ -321,11 +319,11 @@ pluginTester({
     babelOptions,
     pluginOptions: {
         webpackConfig: path.resolve(__dirname + '/webpack.config.js'),
-        babelConfig: createBabelOptions(),
         sideEffects: {
             projectPath: path.resolve(__dirname),
             default: false,
         },
+        advanced: { babelConfig: createBabelOptions() },
     },
     tests: {
         // side-effect default option: node-module unclear import
@@ -343,18 +341,59 @@ pluginTester({
     babelOptions,
     pluginOptions: {
         webpackConfig: path.resolve(__dirname + '/webpack.config.js'),
-        babelConfig: createBabelOptions(),
         sideEffects: {
             // this is an invalid option; not an absolute path
             projectPath: './tests',
             default: false,
         },
+        advanced: { babelConfig: createBabelOptions() },
     },
     tests: {
         // side-effect default option: node-module unclear import
         'should throw an error on an invalid option': {
             code: `import "testmodule"`,
             error: 'the `sideEffects.projectPath` option must be an absolute path',
+        },
+    },
+});
+
+// tests custom resolvers and async support
+const pathResolver = (() => {
+    const webpackConfig = require('./webpack.config.js');
+    const resolver = require('../src/pathResolver').defaultResolver(webpackConfig);
+    return (request, issuer) => {
+        return new Promise(ok => {
+            setTimeout(() => ok(resolver(request, issuer)), 50);
+        });
+    };
+})();
+
+const astResolver = (() => {
+    const babelConfig = createBabelOptions();
+    const resolver = require('../src/specResolver').defaultResolver(babelConfig);
+    return (filePath) => {
+        return new Promise(ok => {
+            setTimeout(() => ok(resolver(filePath)), 50);
+        });
+    };
+})();
+
+pluginTester({
+    plugin,
+    babel,
+    babelOptions,
+    pluginOptions: {
+        advanced: { pathResolver, astResolver, async: true },
+    },
+    tests: {
+        // custom, async resolvers
+        'should successfully transform with custom, async resolvers': {
+            code: `import init, { theFirstFunc, theSecondFunc } from "testmodule"`,
+            output: `
+                import init from "./tests/testmodule/index.js";
+                import theFirstFunc from "./tests/testmodule/myFirstFunc.js";
+                import { mySecondFunc as theSecondFunc } from "./tests/testmodule/mySecondFunc.js";
+            `,
         },
     },
 });

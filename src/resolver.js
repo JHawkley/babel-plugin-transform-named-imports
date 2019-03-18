@@ -1,4 +1,5 @@
 const PathResolver = require('./pathResolver');
+const resolver = require('eslint-import-resolver-webpack');
 
 /**
  * Resolves the absolute path to a file using Webpack's resolver.
@@ -15,7 +16,17 @@ class Resolver extends PathResolver {
      * case the specified configuration file is a multi-config file.
      */
     constructor(webpackConfig, webpackConfigIndex) {
-        super({ webpackConfig, webpackConfigIndex });
+        const settings = {
+            config: webpackConfig,
+            'config-index': webpackConfigIndex,
+        };
+
+        const resolvePathFn = (request, issuer) => {
+            const result = resolver.resolve(request, issuer, settings);
+            return result.found ? result.path : null;
+        };
+
+        super(resolvePathFn);
     }
 
     /**

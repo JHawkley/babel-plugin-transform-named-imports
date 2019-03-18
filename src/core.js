@@ -1,8 +1,28 @@
+const ospath = require('path');
 const debug = require('debug')('transform-named-imports');
 
-const types = require('./babel-helper').types;
+const $ = require('./constants');
+const types = require('./babelHelper').types;
+const validateOptions = require('./options').validate;
+const SpecResolver = require('./specResolver');
+const PathResolver = require('./pathResolver');
+const SideEffects = require('./sideEffects');
+const extractImportSpecifiers = require('./extractImportSpecifiers');
+const { pathHelper, appendCurPath } = require('./utils');
 
-/** @typedef {import('./index').PluginState} PluginState */
+/**
+ * The state of this plugin.
+ * @typedef OurState
+ * @prop {PathResolver} pathResolver The path-resolver.
+ * @prop {SpecResolver} specResolver The specifier-resolver.
+ * @prop {SideEffects} sideEffects The side-effect checker.
+ * @prop {string} sourcePath The path to the file being transformed by the plugin.
+ * @prop {boolean} doDefaults Whether to transform default imports and exports.
+ * @prop {Set<string>} visitedNames The identifiers that have already been processed.
+ * @prop {function(Specifier): string} makeImportPath A function that will convert a
+ * specifier into an import path.
+ */
+
 /** @typedef {import('./extractImportSpecifiers').ImportSpecifier} ImportSpecifier */
 /** @typedef {import('./extractExportSpecifiers').ExportSpecifier} ExportSpecifier */
 
@@ -17,9 +37,108 @@ const types = require('./babel-helper').types;
 const abortSignal = Symbol('abort');
 
 /**
+ * Called by the `pre` method of the plugin to get the initial state.
+ * @param {Map} pluginState The current Babel plugin-pass object.
+ * @param {*} file The file instance provided by Babel.
+ * @returns {OurState}
+ */
+const setupState = (pluginState, file) => {
+    // setup configuration only once per file
+    const options = validateOptions(pluginState.opts);
+    const sourcePath = file.opts.filename;
+    const pathResolver = new PathResolver(options.pathResolver);
+
+    // for every program, create some state to track identifier
+    // names that have already been visited; this should prevent
+    // unnecessary extra visits and infinite recursions
+    const visitedNames = new Set();
+
+    // takes the specifier and builds the path, we prefer
+    // the absolute path to the file, but if we weren't
+    // able to resolve that, stick to the original path
+    const makeImportPath = specifier => {
+        if (!specifier.path) {
+            return specifier.originalPath;
+        }
+
+        const newPath = appendCurPath(ospath.relative(
+            ospath.dirname(sourcePath),
+            specifier.path
+        ));
+
+        const decomposed = Object.assign({ path: newPath }, specifier.webpack);
+        return pathResolver.recompose(decomposed);
+    };
+
+    return {
+        pathResolver,
+        sourcePath,
+        visitedNames,
+        makeImportPath,
+        specResolver: new SpecResolver(options.astResolver, pathResolver),
+        sideEffects: new SideEffects(options.sideEffects, pathResolver),
+        doDefaults: options.transformDefaultImports,
+    };
+}
+
+/**
+ * Visits an `ImportDeclaration` node.
+ * @param {*} path The current path in the AST.
+ * @param {Map} pluginState The current Babel plugin-pass object.
+ */
+const importDeclarationVisitor = (path, pluginState) => {
+    /** @type {OurState} */
+    const state = pluginState.get($.pluginName);
+    const { visitedNames, sourcePath, doDefaults, pathResolver } = state;
+
+    // skip imports we cannot resolve
+    if (!pathResolver.resolve(path.node.source.value, sourcePath)) {
+        return;
+    }
+
+    // get the declaration's import specifiers, filtering out any
+    // that have already been visited previously
+    const specifiers = extractImportSpecifiers(
+        [path.node],
+        request => pathHelper(request, sourcePath, pathResolver)
+    ).filter(spec => !visitedNames.has(spec.name));
+
+    // if there is no work to do, exit immediately
+    if (specifiers.length === 0) {
+        return;
+    }
+
+    // leave single, default imports alone if we're not transforming them
+    if (specifiers.length === 1 && !doDefaults && specifiers[0].type === $.default) {
+        visitedNames.add(specifiers[0].name);
+        return;
+    }
+
+    try {
+        const transforms = specifiers
+            .map(toExportedSpecifier(state))
+            .map(toTransform(state));
+
+        if (transforms.length > 0) {
+            path.replaceWithMultiple(transforms);
+        }
+    }
+    catch (error) {
+        if (Object.is(error, abortSignal)) {
+            // abort signal was thrown; just stop without
+            // performing any transformations
+            return;
+        }
+
+        // rethrow any other error
+        throw error;
+    }
+};
+
+/**
  * Given a specifier, locates the next specifier in the import/export chain.
  * Returns `null` if no such specifier could be located.
- * @param {PluginState} state The state object provided to the plugin.
+ * @param {OurState} state The state object of the plugin.
  * @param {Specifier} specifier The specifier to use in the search.
  * @returns {Specifier} The next specifier in the chain or `null` if it wasn't found.
  */
@@ -33,13 +152,13 @@ const findNextSpecifier = (state, specifier) => {
     }
 
     // stop at namespaced imports; there's nothing more that can be resolved
-    if (type === 'namespace') {
+    if (type === $.namespace) {
         debug('HIT NAMESPACE IMPORT');
         return null;
     }
 
     // stop at default imports if we're not transforming them
-    if (!state.doDefaults && type === 'default') {
+    if (!state.doDefaults && type === $.default) {
         debug('HIT DEFAULT IMPORT');
         return null;
     }
@@ -106,7 +225,7 @@ const findNextSpecifier = (state, specifier) => {
  * Creates a function that can be used with `Array#map` that converts an import
  * specifier into a result pair that can be processed by {@link toTransform} to
  * produce a Babel transformation.
- * @param {PluginState} state The state object provided to the plugin.
+ * @param {OurState} state The state object of the plugin.
  * @returns {ExportedSpecifierMapper} A function, to be used with `Array#map`.
  */
 const toExportedSpecifier = state => impSpecifier => {
@@ -154,7 +273,7 @@ const toExportedSpecifier = state => impSpecifier => {
 /**
  * Creates a function that can be used with `Array#map` that will
  * map the results of {@link toExportedSpecifier} to a Babel transformation.
- * @param {PluginState} state The state object provided to the plugin.
+ * @param {OurState} state The state object of the plugin.
  * @returns {TransformMapper}
  */
 const toTransform = state => ({impSpecifier, expSpecifier}) => {
@@ -179,7 +298,7 @@ const toTransform = state => ({impSpecifier, expSpecifier}) => {
     }
 
     switch (expSpecifier.type) {
-    case 'default':
+    case $.default:
         return types.importDeclaration(
             [types.importDefaultSpecifier(
                 types.identifier(impSpecifier.name)
@@ -187,7 +306,7 @@ const toTransform = state => ({impSpecifier, expSpecifier}) => {
             types.stringLiteral(importPath),
         );
 
-    case 'namespace':
+    case $.namespace:
         return types.importDeclaration(
             [types.importNamespaceSpecifier(
                 types.identifier(impSpecifier.name)
@@ -195,7 +314,7 @@ const toTransform = state => ({impSpecifier, expSpecifier}) => {
             types.stringLiteral(importPath),
         );
 
-    case 'named':
+    case $.named:
         return types.importDeclaration(
             [types.importSpecifier(
                 types.identifier(impSpecifier.name),
@@ -219,6 +338,8 @@ const toTransform = state => ({impSpecifier, expSpecifier}) => {
 };
 
 module.exports = {
+    setupState,
+    importDeclarationVisitor,
     abortSignal,
     toExportedSpecifier,
     toTransform,

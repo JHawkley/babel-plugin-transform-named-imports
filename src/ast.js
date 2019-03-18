@@ -1,4 +1,4 @@
-const babelParser = require('./babel-helper').makeParser();
+const babelParser = require('./babelHelper').makeParser();
 const pathHelper_legacy = require('./utils').pathHelper_legacy;
 const extractExportSpecifiers = require('./extractExportSpecifiers');
 const extractImportSpecifiers = require('./extractImportSpecifiers');

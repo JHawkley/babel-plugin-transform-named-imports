@@ -9,7 +9,7 @@ const compareVersions = require('compare-versions');
 // `FORCE_BABEL_SEVEN` environment variable to "true";
 // useful for testing
 
-/** @typedef {import('./options').PluginOptions} PluginOptions */
+/** @typedef {import('./specResolver').ResolveAstFn} ResolveAstFn */
 
 /**
  * Gets the `babel-core` module.  Be mindful of the version returned,
@@ -38,15 +38,13 @@ const checkVersion = neededVersion =>
 
 /**
  * Creates a function that can parse a file into a Babel AST.
- * @param {PluginOptions} options The options that were provided to the plugin.
- * @returns {function(string): *} A function that takes an absolute
- * path and returns a Babel AST.
+ * @param {?Object} babelConfig The Babel configuration to use.
+ * @returns {ResolveAstFn} A function that tries to resolve an AST.
  * @throws When no parser could be generated from the Node packages
  * installed.
  */
-const makeParser = options => {
+const makeParser = babelConfig => {
     const Babel = getBabel();
-    const baseConfig = options.babelConfig;
 
     // version 7 introduced the `parseSync` function
     if (typeof Babel.parseSync === 'function') {
@@ -54,7 +52,7 @@ const makeParser = options => {
 
         return function babel7Parse(filePath) {
             try {
-                const options = Object.assign({}, baseConfig, {
+                const options = Object.assign({}, babelConfig, {
                     caller: {
                         name: 'transform-named-imports',
                         supportsStaticESM: true,
@@ -75,7 +73,7 @@ const makeParser = options => {
     // this should not perform any transformations
     return function babel6Parse(filePath) {
         try {
-            const options = Object.assign({}, baseConfig, {
+            const options = Object.assign({}, babelConfig, {
                 filename: filePath,
                 sourceType: 'module',
                 ast: true,

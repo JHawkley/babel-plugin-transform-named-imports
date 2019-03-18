@@ -95,10 +95,32 @@ const pathExists = path => {
     }
 };
 
+/**
+ * Wraps a potentially asynchronous function, awaiting any promises
+ * returned by cycling Node's event-loop until it completes.
+ * If the function did not return a promise, the return value
+ * is returned immediately.
+ * @template TArgs,TResult
+ * @param {function(...TArgs): (TResult|Promise<TResult>)} fn
+ * The potentially asynchronous function to wrap.
+ * @returns {function(...TArgs): TResult} A function that always
+ * invokes `fn` synchronously.
+ */
+const deasyncFn = (fn) => {
+    const isPromise = require('is-promise');
+    const deasync = require('deasync-promise');
+
+    return function synchedFn() {
+        const result = fn.apply(this, arguments);
+        return isPromise(result) ? deasync(result) : result;
+    };
+};
+
 module.exports = {
     emptyWebpackProps,
     pathHelper,
     pathHelper_legacy,
     appendCurPath,
     pathExists,
+    deasyncFn,
 };

@@ -1,4 +1,5 @@
-const types = require('./babel-helper').types;
+const $ = require('./constants');
+const types = require('./babelHelper').types;
 const { emptyWebpackProps } = require('./utils');
 
 /** @typedef {import('./utils').SpecifierProps} SpecifierProps */
@@ -19,11 +20,11 @@ const { emptyWebpackProps } = require('./utils');
 const getSimpleType = node => {
     const { local } = node;
 
-    if (local && local.name === 'default') return 'default';
-    if (types.isExportDefaultSpecifier(node)) return 'default';
-    if (types.isExportNamespaceSpecifier(node)) return 'namespace';
-    if (types.isExportSpecifier(node)) return 'named';
-    return 'unknown';
+    if (local && local.name === $.default) return $.default;
+    if (types.isExportDefaultSpecifier(node)) return $.default;
+    if (types.isExportNamespaceSpecifier(node)) return $.namespace;
+    if (types.isExportSpecifier(node)) return $.named;
+    return $.unknown;
 };
 
 /** @type {function(ExportSpecifier[], *): void} */
@@ -39,12 +40,12 @@ const handleDefaultExport = (exps, node) => {
 
     exps.push({
         name: localName,
-        exportedName: 'default',
+        exportedName: $.default,
         searchName: localName,
         path: null,
         originalPath: null,
         webpack: emptyWebpackProps,
-        type: 'default',
+        type: $.default,
     });
 };
 
@@ -57,11 +58,11 @@ const handleOtherExport = (exps, resolve, node) => {
     specifiers.forEach(specifier => {
         const type = getSimpleType(specifier);
 
-        if (type !== 'unknown') {
+        if (type !== $.unknown) {
             const localName = (specifier.local || specifier.exported).name;
             const exportedName
                 = specifier.exported ? specifier.exported.name
-                : type === 'default' ? 'default'
+                : type === $.default ? $.default
                 : localName;
 
             exps.push({

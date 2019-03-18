@@ -8,7 +8,7 @@ const mm = require('micromatch');
 
 const { appendCurPath, pathExists } = require('./utils');
 
-/** @typedef {import('./options').PluginOptions} PluginOptions */
+/** @typedef {import('./options').SideEffectOptions} SideEffectOptions */
 /** @typedef {(boolean|string|string[])} FlagValue */
 
 /**
@@ -53,14 +53,12 @@ class SideEffects {
 
     /**
      * Creates an instance of {@link SideEffects}.
-     * @param {PluginOptions} options The options that were provided to the plugin.
+     * @param {SideEffectOptions} options The side-effect options that were provided
+     * to the plugin.
      * @param {import('./pathResolver')} pathResolver The path-resolver.
      * @memberof SideEffects
      */
     constructor(options, pathResolver) {
-        // pull out the side-effect options
-        options = options.sideEffects;
-
         /** @type {Object.<string, PackageData>} */
         this.cache = {};
 

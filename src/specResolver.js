@@ -1,11 +1,24 @@
-const types = require('./babel-helper').types;
-
+const types = require('./babelHelper').types;
 const pathHelper = require('./utils').pathHelper;
 const extractExportSpecifiers = require('./extractExportSpecifiers');
 const extractImportSpecifiers = require('./extractImportSpecifiers');
 
 /** @typedef {import('./extractImportSpecifiers').ImportSpecifier} ImportSpecifier */
 /** @typedef {import('./extractExportSpecifiers').ExportSpecifier} ExportSpecifier */
+
+/**
+ * A Babel-compatible AST.
+ * @typedef BabelAST
+ */
+
+/**
+ * A function that takes the absolute path to a module and tries to parse it
+ * into a Babel-compatible AST.
+ * @callback ResolveAstFn
+ * @param {string} filePath The absolute path to the file to try to parse.
+ * @returns {?BabelAST} A Babel-compatible AST or `null` if no AST could be
+ * created, for any reason.
+ */
 
 /**
  * @typedef SpecifierResult
@@ -28,17 +41,28 @@ const isExport = node => {
 class SpecResolver {
 
     /**
+     * Creates an ast-resolver that uses the installed Babel package.
+     * This is used if a custom `advanced.pathResolver` is not provided
+     * by the options.
+     * @static
+     * @param {Object} babelConfig
+     * @returns {ResolveAstFn}
+     */
+    static defaultResolver(babelConfig) {
+        return require('./babelHelper').makeParser(babelConfig);
+    }
+
+    /**
      * Initializes a new instance of {@link SpecResolver}.
-     * @param {function(string): *} parserFn A function that can parse a file into
+     * @param {ResolveAstFn} astResolver A function that can parse a file into
      * a Babel AST.
      * @param {import('./pathResolver')} pathResolver The path-resolver to use when
      * resolving a file's path.
      */
-    constructor(parserFn, pathResolver) {
-        /** @type {Object.<string, SpecifierResult>} */
+    constructor(astResolver, pathResolver, cache) {
         this.cache = {};
 
-        this.parse = parserFn;
+        this.astResolver = astResolver;
         this.pathResolver = pathResolver;
     }
 
@@ -54,7 +78,7 @@ class SpecResolver {
             return cachedResult;
         }
         
-        const ast = this.parse(filePath);
+        const ast = this.astResolver(filePath);
         const specifiers = this.getSpecifiers(ast, filePath);
 
         this.cache[filePath] = specifiers;

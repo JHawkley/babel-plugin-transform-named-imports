@@ -1,125 +1,13 @@
-const ospath = require('path');
+const $ = require('./constants');
+const core = require('./core');
 
-const validateOptions = require('./options').validate;
-const SpecResolver = require('./specResolver');
-const PathResolver = require('./pathResolver');
-const SideEffects = require('./sideEffects');
-const extractImportSpecifiers = require('./extractImportSpecifiers');
-const { pathHelper, appendCurPath } = require('./utils');
-const { abortSignal, toExportedSpecifier, toTransform } = require('./core');
-
-/** @typedef {import('./core').Specifier} Specifier */
-/** @typedef {import('./options').PluginOptions} PluginOptions */
-
-/**
- * The state of the plugin.
- * @typedef PluginState
- * @prop {PluginOptions} opts The original options given to the plugin.
- * @prop {PathResolver} pathResolver The path-resolver.
- * @prop {SpecResolver} specResolver The specifier-resolver.
- * @prop {SideEffects} sideEffects The side-effect checker.
- * @prop {string} sourcePath The path to the file being transformed by the plugin.
- * @prop {boolean} doDefaults Whether to transform default imports and exports.
- * @prop {Set<string>} visitedNames The identifiers that have already been processed.
- * @prop {function(Specifier): string} makeImportPath A function that will convert a
- * specifier into an import path.
- */
-
-/**
- * Visits a `Program` node.
- * @param {*} path The current path in the AST.
- * @param {PluginState} state The current plugin state.
- */
-const Program = (path, state) => {
-    // setup configuration once per program
-    const options = validateOptions(state.opts);
-    const sourcePath = state.file.opts.filename;
-
-    const pathResolver = new PathResolver(options);
-    const parserFn = require('./babel-helper').makeParser(options);
-
-    state.pathResolver = pathResolver;
-    state.specResolver = new SpecResolver(parserFn, pathResolver);
-    state.sideEffects = new SideEffects(options, pathResolver);
-    state.sourcePath = sourcePath;
-    state.doDefaults = options.transformDefaultImports;
-
-    // for every program, create some state to track identifier
-    // names that have already been visited; this should prevent
-    // unnecessary extra visits and infinite recursions
-    state.visitedNames = new Set();
-
-    // takes the specifier and builds the path, we prefer
-    // the absolute path to the file, but if we weren't
-    // able to resolve that, stick to the original path
-    state.makeImportPath = specifier => {
-        if (!specifier.path) {
-            return specifier.originalPath;
-        }
-
-        const newPath = appendCurPath(ospath.relative(
-            ospath.dirname(sourcePath),
-            specifier.path
-        ));
-
-        const decomposed = Object.assign({ path: newPath }, specifier.webpack);
-        return pathResolver.recompose(decomposed);
-    };
-};
-
-/**
- * Visits an `ImportDeclaration` node.
- * @param {*} path The current path in the AST.
- * @param {PluginState} state The current plugin state.
- */
-const ImportDeclaration = (path, state) => {
-    const { visitedNames, sourcePath, doDefaults, pathResolver } = state;
-
-    // skip imports we cannot resolve
-    if (!pathResolver.resolve(path.node.source.value, sourcePath)) {
-        return;
-    }
-
-    // get the declaration's import specifiers, filtering out any
-    // that have already been visited previously
-    const specifiers = extractImportSpecifiers(
-        [path.node],
-        request => pathHelper(request, sourcePath, pathResolver)
-    ).filter(spec => !visitedNames.has(spec.name));
-
-    // if there is no work to do, exit immediately
-    if (specifiers.length === 0) {
-        return;
-    }
-
-    // leave single, default imports alone if we're not transforming them
-    if (specifiers.length === 1 && !doDefaults && specifiers[0].type === 'default') {
-        visitedNames.add(specifiers[0].name);
-        return;
-    }
-
-    try {
-        const transforms = specifiers
-            .map(toExportedSpecifier(state))
-            .map(toTransform(state));
-
-        if (transforms.length > 0) {
-            path.replaceWithMultiple(transforms);
-        }
-    }
-    catch (error) {
-        if (Object.is(error, abortSignal)) {
-            // abort signal was thrown; just stop without
-            // performing any transformations
-            return;
-        }
-
-        // rethrow any other error
-        throw error;
-    }
-};
+const setupState = core.setupState;
+const ImportDeclaration = core.importDeclarationVisitor;
 
 module.exports = () => ({
-    name: 'transform-named-imports',
-    visitor: { Program, ImportDeclaration },
+    name: $.pluginName,
+    visitor: { ImportDeclaration },
+    pre(file) {
+        this.set($.pluginName, setupState(this, file));
+    },
 });

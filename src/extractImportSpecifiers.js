@@ -1,4 +1,5 @@
-const types = require('./babel-helper').types;
+const $ = require('./constants');
+const types = require('./babelHelper').types;
 
 /** @typedef {import('./utils').SpecifierProps} SpecifierProps */
 /** @typedef {import('./utils').WebpackProps} WebpackProps */
@@ -18,11 +19,11 @@ const types = require('./babel-helper').types;
 const getSimpleType = node => {
     const { imported } = node;
 
-    if (imported && imported.name === 'default') return 'default';
-    if (types.isImportDefaultSpecifier(node)) return 'default';
-    if (types.isImportNamespaceSpecifier(node)) return 'namespace';
-    if (types.isImportSpecifier(node)) return 'named';
-    return 'unknown';
+    if (imported && imported.name === $.default) return $.default;
+    if (types.isImportDefaultSpecifier(node)) return $.default;
+    if (types.isImportNamespaceSpecifier(node)) return $.namespace;
+    if (types.isImportSpecifier(node)) return $.named;
+    return $.unknown;
 };
 
 /**
@@ -43,10 +44,10 @@ module.exports = (declarations, resolve) => {
         specifiers.forEach(specifier => {
             const type = getSimpleType(specifier);
 
-            if (type !== 'unknown') {
+            if (type !== $.unknown) {
                 const localName = specifier.local.name;
                 const importedName
-                    = type === 'default' ? 'default'
+                    = type === $.default ? $.default
                     : specifier.imported ? specifier.imported.name
                     : localName;
 
