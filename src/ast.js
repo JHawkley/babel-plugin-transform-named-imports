@@ -1,81 +1,53 @@
-const fs = require('fs');
-
-const Babylon = require('babylon');
-
-const Resolver = require('./resolver');
+const babelParser = require('./babelHelper').makeParser();
+const pathHelper_legacy = require('./utils').pathHelper_legacy;
 const extractExportSpecifiers = require('./extractExportSpecifiers');
 const extractImportSpecifiers = require('./extractImportSpecifiers');
 
+/** @typedef {import('./utils').SpecifierProps} SpecifierProps */
+
 /**
  * Small wrapper over the Babylon ES6 AST.
+ * @deprecated Use {@link import('./specResolver')|SpecResolver} to extract
+ * specifiers from a file instead.
  */
 class AST {
     /**
-     * Initializes a new instance of {@see AST}.
-     * @param ast The AST to wrap.
-     * @param resolver The resolver to use when resolving a file.
-     * @param source The path to the file from which this AST was parsed.
+     * Initializes a new instance of {@link AST}.
+     * @param {*} ast The AST to wrap.
+     * @param {import('./resolver')} resolver The resolver to use when resolving a file.
+     * @param {string} sourcePath The path to the file from which this AST was parsed.
      */
     constructor(ast, resolver, sourcePath) {
         this.ast = ast;
         this.resolver = resolver;
         this.sourcePath = sourcePath;
+
+        // an adapter for the old resolver class
+        this.resolveSpecifierProps = request =>
+            pathHelper_legacy(request, sourcePath, resolver);
     }
 
     /**
-     * Parses the specified JS/ES6 file with the Babylon parser
+     * Parses the specified JS/ES6 file with the Babel parser
      * and returns the AST.
-     * @param filePath The path to the file to parse.
-     * @param resolver The resolver to use to resolve the specified file.
+     * @param {string} filePath The path to the file to parse.
+     * @param {import('./resolver')} resolver The resolver to use to resolve the specified file.
      * @returns The AST of the specified file or null if the specified
      * file could not be found or could not be parsed.
      */
     static parseFrom(filePath, resolver) {
-        try {
-            const ast = Babylon.parse(fs.readFileSync(filePath, 'utf-8'), {
-                sourceType: 'module',
-                plugins: [
-                    'jsx',
-                    'flow',
-                    'estree',
-                    'typescript',
-                    'doExpressions',
-                    'objectRestSpread',
-                    'decorators',
-                    'decorators2',
-                    'classProperties',
-                    'classPrivateProperties',
-                    'classPrivateMethods',
-                    'exportExtensions',
-                    'asyncGenerators',
-                    'functionBind',
-                    'functionSent',
-                    'dynamicImport',
-                    'numericSeparator',
-                    'optionalChaining',
-                    'importMeta',
-                    'bigInt',
-                    'optionalCatchBinding',
-                    'throwExpressions',
-                    'pipelineOperator',
-                    'nullishCoalescingOperator',
-                ],
-            });
-
-            return new AST(ast, resolver, filePath);
-        } catch (error) {
-            return null;
-        }
+        const ast = babelParser(filePath);
+        return ast ? new AST(ast, resolver, filePath) : null;
     }
 
     /**
      * Resolves the absolute path to the specified file,
      * relative to the file being parsed.
-     * @param path The path to resolve.
-     * @returns The absolute path to the specified file or
+     * @param {string} request The path to resolve.
+     * @returns {string} The absolute path to the specified file or
      * null if the path could not be resolved.
      */
-    resolve(path) {
+    resolve(request) {
         return this.resolver.resolveFile(path, this.sourcePath);
     }
 
@@ -86,7 +58,7 @@ class AST {
         const declarations = this.ast.program.body
             .filter(node => node.type === 'ImportDeclaration');
 
-        return extractImportSpecifiers(declarations, this.resolve.bind(this));
+        return extractImportSpecifiers(declarations, this.resolveSpecifierProps);
     }
 
     /**
@@ -96,7 +68,7 @@ class AST {
         const declarations = this.ast.program.body
             .filter(node => node.type === 'ExportDefaultDeclaration' || node.type === 'ExportNamedDeclaration');
 
-        return extractExportSpecifiers(declarations, this.resolve.bind(this));
+        return extractExportSpecifiers(declarations, this.resolveSpecifierProps);
     }
 }
 

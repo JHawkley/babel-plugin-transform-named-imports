@@ -1,0 +1,1 @@
+const myThirdFunction = () => console.log('my third func');

@@ -1,4 +1,5 @@
-import { myOtherFunc } from './myOtherFunc';
-export { myInlineFunc } from './myOtherFunc';
+import { mySecondFunc } from './mySecondFunc';
 
-export { myOtherFunc as myOtherOtherFunc };
+export { default as myInlineFirstFunc } from './myFirstFunc';
+export { mySecondFunc as myExportedSecondFunc };
+export { myThirdFunc } from './myThirdFunc';
