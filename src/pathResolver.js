@@ -44,9 +44,11 @@ class PathResolver {
      * path could not be resolved correctly.
      */
     async resolve(request, issuer) {
+        // the issuer cannot have loaders attached to it
+        issuer = this.decompose(issuer).path;
+
         const decomposed = this.decompose(request);
-        const requestPath = decomposed.path;
-        const resolvedPath = await this.resolveImpl(requestPath, issuer);
+        const resolvedPath = await this.resolveImpl(decomposed.path, issuer);
         return this.integrate(resolvedPath, decomposed);
     }
 
@@ -61,9 +63,11 @@ class PathResolver {
      * path could not be resolved correctly.
      */
     async resolvePath(request, issuer) {
+        // the issuer cannot have loaders attached to it
+        issuer = this.decompose(issuer).path;
+
         const decomposed = this.decompose(request);
-        const requestPath = decomposed.path;
-        return await this.resolveImpl(requestPath, issuer);
+        return await this.resolveImpl(decomposed.path, issuer);
     }
 
     /**
@@ -99,19 +103,20 @@ class PathResolver {
      * 
      * @private
      * @async
-     * @param {string} requestPath
-     * @param {string} issuer
-     * @returns {?string}
+     * @param {string} request The request path, without loaders or query parameters.
+     * @param {string} issuer The issuer of the request, without loaders or query parameters.
+     * @returns {?string} The absolute path of the request or `null` if the
+     * path could not be resolved correctly.
      */
-    async resolveImpl(requestPath, issuer) {
-        const cacheKey = requestPath + issuer;
+    async resolveImpl(request, issuer) {
+        const cacheKey = request + issuer;
+        let resolvedPath = this.cache.get(cacheKey);
 
-        if (this.cache.has(cacheKey))
-            return this.cache.get(cacheKey);
+        if (typeof resolvedPath === 'undefined') {
+            resolvedPath = await this.resolvePathFn(request, issuer);
+            this.cache.set(cacheKey, resolvedPath);
+        }
 
-        const resolvedPath = await this.resolvePathFn(requestPath, issuer);
-
-        this.cache.set(cacheKey, resolvedPath);
         return resolvedPath;
     }
 

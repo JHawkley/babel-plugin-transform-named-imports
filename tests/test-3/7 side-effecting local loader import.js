@@ -1,0 +1,1 @@
+import { loadedFoo } from "testmodule";

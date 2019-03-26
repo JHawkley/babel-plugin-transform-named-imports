@@ -1,5 +1,6 @@
 {
     "sideEffects": [
-        "./testmodule/sideEffects.js"
+        "./testmodule/sideEffects.js",
+        "./testmodule/valCode.js"
     ]
 }

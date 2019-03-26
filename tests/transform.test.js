@@ -173,7 +173,7 @@ loaderTester({
     tests: {
         'should be able to handle imports with inline loaders': {
             entry: '1 inline loader.js',
-            output: `import theOneTrueAnswer from "val-loader!./testmodule/val-code.js";`,
+            output: `import theOneTrueAnswer from "val-loader!./testmodule/valCode.js";`,
         }
     }
 });
@@ -229,6 +229,16 @@ loaderTester({
         'should transform when a node-module\'s `package.json` declares itself pure': {
             entry: '3 pure node-module import.js',
             output: `import doTheThing from "./node_modules/pure-boy/doTheThing.js";`,
+        },
+
+        'should assume side-effects when the `package.json#sideEffect` property is undefined': {
+            entry: '4 unclear node-module import.js',
+            output: `import { doTheThing } from "./node_modules/unclr/index.js";`,
+        },
+
+        'should be able to handle side-effecting imports with inline loaders': {
+            entry: '7 side-effecting local loader import.js',
+            output: `import { FOO as loadedFoo } from "val-loader!./testmodule/valCode.js";`,
         }
     }
 });
@@ -253,6 +263,11 @@ loaderTester({
         'should be able to ignore node-modules by name': {
             entry: '6 ignore side-effecting node-module import.js',
             output: `import doTheThing from "./node_modules/side-effecty/doTheThing.js";`,
+        },
+
+        'should be able to handle side-effecting imports with inline loaders': {
+            entry: '7 side-effecting local loader import.js',
+            output: `import { FOO as loadedFoo } from "./testmodule/constants.js";`,
         }
     }
 });

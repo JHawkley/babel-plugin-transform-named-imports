@@ -23,8 +23,17 @@ const isMatch = (str, patterns) =>
  */
 class SideEffects {
 
-    static async create(context, pathResolver) {
-        return await new SideEffects(context).init(pathResolver);
+    /**
+     * Creates an instance of {@link SideEffects} and begins initializing it.
+     * Be sure to `await` on the promise before using it.
+     * 
+     * @static
+     * @param {Context} context The context object.
+     * @param {PathResolver} pathResolver The path-resolver.
+     * @returns {Promise.<SideEffects>} A new, initializing {@link SideEffects} instance.
+     */
+    static create(context, pathResolver) {
+        return new SideEffects(context, pathResolver).init();
     }
 
     /**
@@ -35,10 +44,12 @@ class SideEffects {
      * instead.
      * 
      * @param {Context} context The context object.
+     * @param {PathResolver} pathResolver The path-resolver.
      */
-    constructor(context) {
+    constructor(context, pathResolver) {
         const { ignoreSideEffects } = context.options;
         this.context = context;
+        this.pathResolver = pathResolver;
         this.didInit = false;
         this.enabled = ignoreSideEffects !== true;
         this.rootPath = context.loader.rootContext;
@@ -53,10 +64,9 @@ class SideEffects {
      * Initializes the ignore lists for this instance.
      * 
      * @async
-     * @param {PathResolver} pathResolver The path-resolver.
      * @returns {SideEffects} This instance.
      */
-    async init(pathResolver) {
+    async init() {
         if (this.didInit) return this;
         const { ignoreSideEffects } = this.context.options;
 
@@ -78,7 +88,7 @@ class SideEffects {
             // eslint-disable-next-line jsdoc/require-param
             /** @type {function(string): Promise.<IgnoreResult>} */
             const testModule = async (str) => {
-                const resolved = await pathResolver.resolvePath(str, this.rootPath);
+                const resolved = await this.pathResolver.resolvePath(str, this.rootPath);
                 return resolved ? { pattern: false, val: resolved } : null;
             };
 
@@ -133,9 +143,12 @@ class SideEffects {
 
         if (loadedModule == null)
             throw new Error('cannot detect side-effects, the `loadedModule` was nullish');
+        
+        // decompose the path to remove webpack loaders, etc.
+        const modulePath = this.pathResolver.decompose(loadedModule.path).path;
 
         if (!this.enabled) return false;
-        if (this.isIgnored(loadedModule.path)) return false;
+        if (this.isIgnored(modulePath)) return false;
         return this.hasSideEffects(loadedModule.instance);
     }
 

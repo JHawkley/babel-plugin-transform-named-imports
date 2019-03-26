@@ -40,7 +40,7 @@ const isExport = node => {
 const makeAstResolver = (context, pathResolver) => {
     const babel = require('./babel');
     const { loader, cache, options: { babelConfig } } = context;
-    const initSideEffects = new SideEffects(context).init(pathResolver);
+    const sideEffectsPromise = SideEffects.create(context, pathResolver);
 
     // eslint-disable-next-line jsdoc/require-param
     /** @type {function(LoadedModule): Promise.<?BabelAST>} */
@@ -71,9 +71,7 @@ const makeAstResolver = (context, pathResolver) => {
         const loaded = await loadModule(path);
         if (!loaded) return null;
 
-        loader.addDependency(path);
-
-        const sideEffects = await initSideEffects;
+        const sideEffects = await sideEffectsPromise;
         if (sideEffects.test(loaded)) return null;
 
         return loaded.ast || await parseAst(loaded);
