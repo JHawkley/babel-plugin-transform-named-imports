@@ -22,7 +22,7 @@ const extractExports = require('./extractExportSpecifiers');
  * @prop {string} path The absolute path to the module.
  * @prop {string} source The module's source code.
  * @prop {WebpackModule} instance The Webpack module instance.
- * @prop {BabelAST} [ast] The Babel AST, if available.
+ * @prop {Promise.<BabelAST>} ast A promise for the Babel AST.
  */
 
 const isImport = node =>
@@ -50,40 +50,16 @@ const makeAstResolver = (context, pathResolver) => {
 
     // eslint-disable-next-line jsdoc/require-param
     /** @type {function(LoadedModule): Promise.<?BabelAST>} */
-    const parseAst = async ({path, source}) => {
+    const parseAst = async (path, source) => {
         try { return await babel.parseAst(path, source, babelConfig); }
         catch (error) {
             debug('PARSE ERROR', error);
             return null;
         }
     };
-    
-    // eslint-disable-next-line jsdoc/require-param
-    /** @type {function(string): Promise.<?LoadedModule>} */
-    const loadModule = (path) => {
-        let cached = cache.module.get(path);
-        if (cached) {
-            debug('MODULE FROM CACHE', contextRelative(path));
-            return Promise.resolve(cached);
-        }
 
-        return new Promise(ok => {
-            debug('LOADING MODULE', contextRelative(path));
-            loader.loadModule(path, (err, source, map, instance) => {
-                ok(err ? null : { path, source, instance });
-            });
-        });
-    };
-    
-    // eslint-disable-next-line jsdoc/require-param
-    /** @type {function(string): Promise.<?BabelAST>} */
-    return async (path) => {
-        const loaded = await loadModule(path);
-        if (!loaded) {
-            debug('MODULE LOAD FAILED', contextRelative(path));
-            return null;
-        }
-
+    const finalizeModule = async (path, source, instance) => {
+        const loaded = { path, source, instance, ast: null };
         const sideEffects = await sideEffectsPromise;
 
         if (sideEffects.test(loaded)) {
@@ -91,7 +67,49 @@ const makeAstResolver = (context, pathResolver) => {
             return null;
         }
 
-        return loaded.ast || await parseAst(loaded);
+        const ast = await parseAst(path, source);
+        if (!ast) return null;
+
+        loaded.ast = ast;
+        return loaded;
+    };
+    
+    // eslint-disable-next-line jsdoc/require-param
+    /** @type {function(string): Promise.<?LoadedModule>} */
+    const loadModule = async (path) => {
+        let cached = cache.module.get(path);
+        if (cached) {
+            debug('MODULE FROM CACHE', contextRelative(path));
+            return await cached;
+        }
+
+        const promisedModule = new Promise(ok => {
+            debug('LOADING MODULE', contextRelative(path));
+            loader.loadModule(path, (err, source, map, instance) => {
+                if (err) debug('MODULE LOAD ERROR', err);
+                ok(err ? null : finalizeModule(path, source, instance));
+            });
+        });
+
+        // temporarily store the module into the cache
+        cache.module.set(path, promisedModule);
+        const newModule = await promisedModule;
+        cache.module.delete(path);
+
+        return newModule;
+    };
+    
+    // eslint-disable-next-line jsdoc/require-param
+    /** @type {function(string): Promise.<?BabelAST>} */
+    return async (path) => {
+        const loaded = await loadModule(path);
+
+        if (!loaded) {
+            debug('MODULE LOAD FAILED', contextRelative(path));
+            return null;
+        }
+
+        return loaded.ast;
     };
 };
 

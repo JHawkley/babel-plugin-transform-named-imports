@@ -23,7 +23,7 @@ const toTransformsMap = core.toTransformsMap;
 
 /**
  * @typedef Cache
- * @prop {Map.<string, LoadedModule>} module The module cache.
+ * @prop {Map.<string, Promise.<LoadedModule>>} module The module cache.
  * @prop {Map.<string, SpecifierResult>} specifier The specifier cache.
  * @prop {Map.<string, string>} path The path cache.
  */
@@ -91,11 +91,11 @@ const transform = async (webpack, source, sourceMap, options, cache) => {
         result = [source, sourceMap];
     }
     else {
-        cache.module.set(resource, {
+        cache.module.set(resource, Promise.resolve({
             source, ast,
             path: resource,
             instance: webpack._module
-        });
+        }));
 
         const state = setupState({ loader: webpack, options, cache, debug });
         const allTransformsMap = new Map();
