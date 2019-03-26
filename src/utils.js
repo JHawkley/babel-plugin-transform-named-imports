@@ -1,126 +1,64 @@
 const fs = require('fs');
+const ospath = require('path');
 
-/** @typedef {import('./pathResolver').DecomposedRequest} DecomposedRequest */
-
-/**
- * @typedef WebpackProps
- * @prop {?string} loaders The loader portion of a request.
- * @prop {?string} query The query portion of a request.
- */
-
-/** @type {WebpackProps} */
-const emptyWebpackProps = Object.freeze({ loaders: null, query: null });
-
-/**
- * @typedef SpecifierProps
- * @prop {?string} importPath The absolute path to the file imported.
- * @prop {WebpackProps} webpack The Webpack-specific parts of the path.
- */
-
-/**
- * A helper for the specifier extractors, to assist in working with decomposed paths.
- * @param {string} request The original request path provided by the
- * import/export declaration.
- * @param {string} issuer The path to the module that issued the request.
- * @param {import('./pathResolver')} pathResolver A path-resolver instance.
- * @returns {SpecifierProps}
- */
-const pathHelper = (request, issuer, pathResolver) => {
-    if (request) {
-        const decomposed = pathResolver.resolve(request, issuer);
-
-        if (decomposed) {
-            const { loaders, path, query } = decomposed;
-
-            return {
-                importPath: path,
-                webpack: { loaders, query },
-            };
-        }
-    }
-
-    return {
-        importPath: null,
-        webpack: emptyWebpackProps,
-    };
-};
-
-/**
- * A helper for {@link import('./ast') AST} to continue working.
- * @param {string} request The original request path provided by the
- * import/export declaration.
- * @param {string} issuer The path to the module that issued the request.
- * @param {import('./resolver')} resolver A resolver instance.
- * @returns {SpecifierProps}
- */
-const pathHelper_legacy = (request, issuer, resolver) => {
-    if (request) {
-        const path = resolver.resolveFile(request, issuer);
-
-        return {
-            importPath: path,
-            webpack: emptyWebpackProps,
-        };
-    }
-
-    return {
-        importPath: null,
-        webpack: emptyWebpackProps,
-    };
+/** @enum {Symbol} */
+const pathTypes = {
+    nil: Symbol('path-types:nil'),
+    file: Symbol('path-types:file'),
+    dir: Symbol('path-types:dir')
 };
 
 /**
  * Prefixes a path with './', the current path, if necessary.
- * @param {string} path The path.
+ * Returns the path unaltered if the given path is absolute.
+ * 
+ * @param {string} path A path.
  * @returns {string}
  */
-const appendCurPath = path => path.startsWith('.') ? path : './' + path;
+const appendCurPath = (path) =>
+    ospath.isAbsolute(path) || path.startsWith('.') ? path : './' + path;
 
 /**
- * Checks if a path exists; basically the same as `fs.exists` but
- * uses the non-deprecated method of checking for a path's existence.
+ * Checks a path for accessibility and the type of file-system object
+ * it points to.
+ * 
+ * @async
  * @param {string} path The path whose existence is in question.
- * @returns {boolean}
+ * @returns {pathTypes}
  */
-const pathExists = path => {
-    try {
-        // check if the path exists
-        // yes, this is the currently recommended way to do it;
-        // `fs.exists` is deprecated
-        fs.accessSync(path);
-        return true;
-    }
-    catch (error) {
-        return false;
-    }
+const checkPath = async (path) => {
+    return await new Promise(ok => {
+        fs.stat(path, (err, stats) => {
+            if (err) ok(pathTypes.nil);
+            else if (stats.isFile()) ok(pathTypes.file);
+            else if (stats.isDirectory()) ok(pathTypes.dir);
+            else ok(pathTypes.nil);
+        });
+    });
 };
 
 /**
- * Wraps a potentially asynchronous function, awaiting any promises
- * returned by cycling Node's event-loop until it completes.
- * If the function did not return a promise, the return value
- * is returned immediately.
- * @template TArgs,TResult
- * @param {function(...TArgs): (TResult|Promise<TResult>)} fn
- * The potentially asynchronous function to wrap.
- * @returns {function(...TArgs): TResult} A function that always
- * invokes `fn` synchronously.
+ * Determines if a `path` is inside of a `target` directory.
+ * Both paths must be absolute.
+ * 
+ * @param {string} path The absolute path in question.
+ * @param {string} target The absolute path in which to try to find `path`.
+ * @returns {boolean} Whether `path` is in `target`.
+ * @throws When either argument is not an absolute path.
  */
-const deasyncFn = (fn) => {
-    const isPromise = require('is-promise');
-    const deasync = require('deasync-promise');
-
-    return function synchedFn() {
-        const result = fn.apply(this, arguments);
-        return isPromise(result) ? deasync(result) : result;
-    };
+const isInPath = (path, target) => {
+    if (!ospath.isAbsolute(path))
+        throw new Error('argument `path` must be an absolute path');
+    if (!ospath.isAbsolute(target))
+        throw new Error('argument `target` must be an absolute path');
+    
+    const relPath = ospath.relative(target, path);
+    return !relPath.startsWith('..');
 };
 
 module.exports = {
-    emptyWebpackProps,
-    pathHelper,
-    pathHelper_legacy,
+    pathTypes,
     appendCurPath,
-    pathExists,
-    deasyncFn,
+    checkPath,
+    isInPath
 };

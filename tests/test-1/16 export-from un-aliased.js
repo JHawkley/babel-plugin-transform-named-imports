@@ -1,0 +1,1 @@
+import { myThirdFunc } from "testmodule";

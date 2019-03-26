@@ -1,0 +1,1 @@
+const myThirdFunction = () => 'my third func';

@@ -1,0 +1,1 @@
+import { sideEffectFoo } from "testmodule";

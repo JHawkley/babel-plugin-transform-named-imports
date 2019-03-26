@@ -1,0 +1,1 @@
+import { byNameDefaultImportFunc } from "testmodule";

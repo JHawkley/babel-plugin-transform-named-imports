@@ -1,0 +1,1 @@
+import * as testmodule from "testmodule";

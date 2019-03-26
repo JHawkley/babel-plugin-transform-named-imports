@@ -1,0 +1,1 @@
+import { theExportedSecondFunc } from "testmodule";

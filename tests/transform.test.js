@@ -1,399 +1,258 @@
+/* global jest */
 const path = require('path');
-const pluginTester = require('babel-plugin-tester');
+const loaderTester = require('./loader-tester');
 
-const plugin = require('../src/index.js');
-const babel = require('../src/babelHelper').getBabel();
+const loader = path.resolve(__dirname, '../src/index.js');
+jest.setTimeout(20000);
 
-// creates options that are compatible with the tests
-const createBabelOptions = options => {
-    let baseOptions;
-
-    if (process.env.FORCE_BABEL_SEVEN === 'true') {
-        // the Babel presets are deprecated, so we're loading in
-        // the relevant plugins individually
-        baseOptions = {
-            configFile: false,
-            babelrc: false,
-            plugins: [
-                '@babel/plugin-proposal-export-namespace-from',
-                '@babel/plugin-syntax-dynamic-import',
-                '@babel/plugin-syntax-import-meta',
-            ],
-        };
-    }
-    else {
-        baseOptions = {
-            babelrc: false,
-            parserOpts: require('babylon-options')({
-                stage: 2,
-                plugins: ['exportExtensions', 'dynamicImport'],
-            }),
-        };
-    }
+const createBabelConfig = (options) => {
+    let baseOptions = {
+        configFile: false,
+        babelrc: false,
+        plugins: [
+            '@babel/plugin-proposal-export-namespace-from',
+            '@babel/plugin-syntax-dynamic-import',
+            '@babel/plugin-syntax-import-meta',
+        ],
+        presets: [
+            ["@babel/preset-env", { targets: { esmodules: true } }]
+        ]
+    };
 
     return Object.assign(baseOptions, options);
 };
 
-const babelOptions = createBabelOptions({
-    filename: 'currentFile.js',
-});
+const fixtureRoot = (fixtureDir) => path.resolve(__dirname, fixtureDir);
 
-pluginTester({
-    plugin,
-    babel,
-    babelOptions,
-    pluginOptions: {
-        webpackConfig: path.resolve(__dirname + '/webpack.config.js'),
-        sideEffects: false,
-        advanced: { babelConfig: createBabelOptions() },
-    },
+const setupRules = (loaderOptions = {}) => ({babelConfig}) => {
+    const use = [];
+
+    if (babelConfig) {
+        use.push({ loader: 'babel-loader', options: babelConfig });
+        loaderOptions.babelConfig = babelConfig;
+    }
+
+    use.push({ loader, options: loaderOptions });
+    
+    return [{ test: /\.js$/, use }];
+};
+
+loaderTester({
+    describe: 'core functionality',
+    rules: setupRules({
+        ignoreSideEffects: true
+    }),
+    babelConfig: createBabelConfig(),
+    context: fixtureRoot('test-1'),
     tests: {
-        // bare import
         'should leave imports with no specifiers alone': {
-            code: `import 'testmodule'`,
+            entry: '1 bare import.js',
             output: `import 'testmodule';`,
         },
-        
-        // single named import
+
         'should convert named imports to default equivalent': {
-            code: `import { theFirstFunc } from "testmodule"`,
-            output: `import theFirstFunc from "./tests/testmodule/myFirstFunc.js";`,
+            entry: '2 single named import.js',
+            output: `import theFirstFunc from "./testmodule/myFirstFunc.js";`,
         },
-        
-        // import default module by-name then re-export
+
         'should convert by-name default import to default equivalent': {
-            code: `import { byNameDefaultImportFunc } from "testmodule"`,
-            output: `import byNameDefaultImportFunc from "./tests/testmodule/myFirstFunc.js";`,
+            entry: '3 import default module by-name then re-export.js',
+            output: `import byNameDefaultImportFunc from "./testmodule/myFirstFunc.js";`,
         },
-        
-        // export-from default module by-name
+
         'should convert by-name default export-from to default equivalent': {
-            code: `import { byNameDefaultExportFunc } from "testmodule"`,
-            output: `import byNameDefaultExportFunc from "./tests/testmodule/myFirstFunc.js";`,
+            entry: '4 export-from default module by-name.js',
+            output: `import byNameDefaultExportFunc from "./testmodule/myFirstFunc.js";`,
         },
 
-        // import module re-exported multiple times
         'should be able to follow through multiple re-exports': {
-            code: `import { theExportedSecondFunc } from "testmodule"`,
-            output: `import { mySecondFunc as theExportedSecondFunc } from "./tests/testmodule/mySecondFunc.js";`,
+            entry: '5 import module re-exported multiple times.js',
+            output: `import { mySecondFunc as theExportedSecondFunc } from "./testmodule/mySecondFunc.js";`,
         },
 
-        // import module aliased multiple times
         'should be able to follow through multiple aliases': {
-            code: `import { theSecondFunc } from "testmodule"`,
-            output: `import { mySecondFunc as theSecondFunc } from "./tests/testmodule/mySecondFunc.js";`,
+            entry: `6 import module aliased multiple times.js`,
+            output: `import { mySecondFunc as theSecondFunc } from "./testmodule/mySecondFunc.js";`,
         },
 
-        // multiple named imports
         'should be able to handle multiple named imports': {
-            code: `import { theFirstFunc, theSecondFunc } from "testmodule"`,
+            entry: `7 multiple named imports.js`,
             output: `
-                import theFirstFunc from "./tests/testmodule/myFirstFunc.js";
-                import { mySecondFunc as theSecondFunc } from "./tests/testmodule/mySecondFunc.js";
+                import theFirstFunc from "./testmodule/myFirstFunc.js";
+                import { mySecondFunc as theSecondFunc } from "./testmodule/mySecondFunc.js";
             `,
         },
 
-        // default import with multiple named import
         'should be able to handle default and multiple named imports': {
-            code: `import init, { theFirstFunc, theSecondFunc } from "testmodule"`,
+            entry: '8 default import with multiple named import.js',
             output: `
-                import init from "./tests/testmodule/index.js";
-                import theFirstFunc from "./tests/testmodule/myFirstFunc.js";
-                import { mySecondFunc as theSecondFunc } from "./tests/testmodule/mySecondFunc.js";
+                import init from "./testmodule/index.js";
+                import theFirstFunc from "./testmodule/myFirstFunc.js";
+                import { mySecondFunc as theSecondFunc } from "./testmodule/mySecondFunc.js";
             `,
         },
 
-        // aliased named import
         'should correctly handle aliased imports': {
-            code: `import { theFirstFunc as aliasedFunc } from "testmodule"`,
-            output: `import aliasedFunc from "./tests/testmodule/myFirstFunc.js";`,
+            entry: '9 aliased named import.js',
+            output: `import aliasedFunc from "./testmodule/myFirstFunc.js";`,
         },
 
-        // default import
         'should leave single default imports alone': {
-            code: `import myFirstFunc from "testmodule/myFirstFunc"`,
+            entry: `10 default import.js`,
             output: `import myFirstFunc from "testmodule/myFirstFunc";`,
         },
 
-        // unresolved default import
-        'should leave unresolvable imports alone': {
-            code: `import React from "reacty"`,
-            output: `import React from "reacty";`,
+        'should leave single default common js imports alone': {
+            entry: '11 common js default import.js',
+            output: `import React from "commonjsmodule";`,
         },
 
-        // unresolved default import with named import
-        'should leave multiple unresolvable imports alone': {
-            code: `import React, { Component } from "reacty"`,
-            output: `import React, { Component } from "reacty";`,
-        },
-
-        // common js default import
-        'should leave common js imports alone': {
-            code: `import React from "./commonjsmodule"`,
-            output: `import React from "./commonjsmodule";`,
-        },
-
-        // common js default with named import
-        'should leave multiple common js imports alone': {
-            code: `import React, { Component } from "./commonjsmodule"`,
-            output: `import React, { Component } from "./commonjsmodule";`,
-        },
-
-        // aliased namespace import
-        'should be able to handle aliased namespaced re-exports': {
-            code: `import { thangs } from "testmodule"`,
-            output: `import * as thangs from "./tests/testmodule/constants.js";`,
-        },
-
-        // glob import
-        'should leave namespaced imports alone': {
-            code: `import * as testmodule from "testmodule"`,
-            output: `import * as testmodule from "./tests/testmodule/index.js";`,
-        },
-
-        // export-from in single line
-        'should follow through export-from': {
-            code: `import { theInlineFirstFunc } from "testmodule"`,
-            output: `import theInlineFirstFunc from "./tests/testmodule/myFirstFunc.js";`,
-        },
-
-        // export-from un-aliased
-        'should follow through export-from, even if never aliased': {
-            code: `import { myThirdFunc } from "testmodule"`,
-            output: `import { myThirdFunc } from "./tests/testmodule/myThirdFunc.js";`,
-        },
-        
-        // import nested default export
-        'should not follow past the first encountered default import, using import-from': {
-            code: `import { defaultFirstFunc } from "testmodule"`,
-            output: `import defaultFirstFunc from "./tests/testmodule/defaultExport.js";`,
-        },
-        
-        // import nested default export-from
-        'should not follow past the first encountered default import, using export-from': {
-            code: `import { byNameDefaultNestedFunc } from "testmodule"`,
-            output: `import byNameDefaultNestedFunc from "./tests/testmodule/defaultExport.js";`,
-        },
-
-        // confusing naming
-        'should be able to resolve properly despite confusing naming': {
-            code: `import { FOO } from "testmodule"`,
-            output: `import { mySecondFunc as FOO } from "./tests/testmodule/mySecondFunc.js";`,
-        },
-
-        // import of a namespaced export
-        'should be able to handle namespaced export-from': {
-            code: `import { thungs } from "testmodule"`,
-            output: `import * as thungs from "./tests/testmodule/constants.js";`,
-        },
-
-        // aliased import of a namespaced export
-        'should be able to handle an aliased namespaced export-from': {
-            code: `import { thungs as myAliasedThungs } from "testmodule"`,
-            output: `import * as myAliasedThungs from "./tests/testmodule/constants.js";`,
-        },
-    },
-});
-
-// tests for when `transformDefaultImports === true`
-pluginTester({
-    plugin,
-    babel,
-    babelOptions,
-    pluginOptions: {
-        webpackConfig: path.resolve(__dirname + '/webpack.config.js'),
-        transformDefaultImports: true,
-        advanced: { babelConfig: createBabelOptions() },
-    },
-    tests: {
-        // non-javascript imports
-        'should stop when AST parsing fails': {
-            code: `import { transformedCss } from "testmodule"`,
-            output: `import transformedCss from "./tests/testmodule/styles.css";`,
-        },
-
-        // stop at webpack-influenced imports
-        'should stop at webpack-influenced imports': {
-            code: `import { webpackLoadedFunc } from "testmodule"`,
-            output: `import { myExportedSecondFunc as webpackLoadedFunc } from "my-loader!./tests/testmodule/reexport.js";`,
-        },
-
-        // inline-loader syntax
-        'should preserve Webpack\'s inline-loader syntax': {
-            code: `import { inlineLoaderCss } from "testmodule"`,
-            output: `import inlineLoaderCss from "style-loader!css-loader?modules!./tests/testmodule/styles.css";`,
-        },
-        
-        // query-params syntax
-        'should preserve Webpack\'s query parameters syntax': {
-            code: `import { queryParamsCss } from "testmodule"`,
-            output: `import queryParamsCss from "./tests/testmodule/styles.css?as-js";`,
-        },
-
-        // transformDefaultImports = true: import nested default export
-        'transform defaults: should follow past first encountered default import, using import-from': {
-            code: `import { defaultFirstFunc } from "testmodule"`,
-            output: `import defaultFirstFunc from "./tests/testmodule/myFirstFunc.js";`,
-        },
-        
-        // transformDefaultImports = true: import nested default export-from
-        'transform defaults: should follow past first encountered default import, using export-from': {
-            code: `import { byNameDefaultNestedFunc } from "testmodule"`,
-            output: `import byNameDefaultNestedFunc from "./tests/testmodule/myFirstFunc.js";`,
-        },
-    },
-});
-
-// tests for when considering side-effects
-pluginTester({
-    plugin,
-    babel,
-    babelOptions,
-    pluginOptions: {
-        webpackConfig: path.resolve(__dirname + '/webpack.config.js'),
-        sideEffects: { projectPath: path.resolve(__dirname) },
-        advanced: { babelConfig: createBabelOptions() },
-    },
-    tests: {
-        // side-effect checking: local side-effecting import
-        'side-effects: should stop when the local `package.json` declares side-effects': {
-            code: `import { sideEffectFoo } from "testmodule"`,
-            output: `import { FOO as sideEffectFoo } from "./tests/testmodule/sideEffects.js";`,
-        },
-        
-        // side-effect checking: node-module side-effecting import
-        'side-effects: should stop when a node-module\'s `package.json` declares side-effects': {
-            code: `import { doTheThing } from "side-effecty"`,
-            output: `import { doTheThing } from "./tests/node_modules/side-effecty/index.js";`,
-        },
-            
-        // side-effect checking: pure import
-        'side-effects: should transform when a node-module\'s `package.json` declares itself pure': {
-            code: `import { doTheThing } from "pure-boy"`,
-            output: `import doTheThing from "./tests/node_modules/pure-boy/doTheThing.js";`,
-        },
-        
-        // side-effect checking: node-module unclear import
-        'side-effects: should assume side-effects when the `sideEffect` property is undefined': {
-            code: `import { doTheThing } from "unclr"`,
-            output: `import { doTheThing } from "./tests/node_modules/unclr/index.js";`,
-        },
-    },
-});
-
-// tests for when ignoring side-effects
-pluginTester({
-    plugin,
-    babel,
-    babelOptions,
-    pluginOptions: {
-        webpackConfig: path.resolve(__dirname + '/webpack.config.js'),
-        sideEffects: {
-            projectPath: path.resolve(__dirname),
-            ignore: [
-                'side-effecty',
-                './testmodule/**/*',
-            ],
-        },
-        advanced: { babelConfig: createBabelOptions() },
-    },
-    tests: {
-        // side-effect ignore option: local side-effecting import
-        'side-effect ignore option: should ignore local side-effects': {
-            code: `import { sideEffectFoo } from "testmodule"`,
-            output: `import { FOO as sideEffectFoo } from "./tests/testmodule/constants.js";`,
-        },
-        
-        // side-effect ignore option: node-module side-effecting import
-        'side-effect ignore option: should be able to ignore node-modules by name': {
-            code: `import { doTheThing } from "side-effecty"`,
-            output: `import doTheThing from "./tests/node_modules/side-effecty/doTheThing.js";`,
-        },
-    },
-});
-
-// tests for when assuming side-effects
-pluginTester({
-    plugin,
-    babel,
-    babelOptions,
-    pluginOptions: {
-        webpackConfig: path.resolve(__dirname + '/webpack.config.js'),
-        sideEffects: {
-            projectPath: path.resolve(__dirname),
-            default: false,
-        },
-        advanced: { babelConfig: createBabelOptions() },
-    },
-    tests: {
-        // side-effect default option: node-module unclear import
-        'side-effect default option: should respect the default assumption': {
-            code: `import { doTheThing } from "unclr"`,
-            output: `import doTheThing from "./tests/node_modules/unclr/doTheThing.js";`,
-        },
-    },
-});
-
-// tests to ensure options validation works
-pluginTester({
-    plugin,
-    babel,
-    babelOptions,
-    pluginOptions: {
-        webpackConfig: path.resolve(__dirname + '/webpack.config.js'),
-        sideEffects: {
-            // this is an invalid option; not an absolute path
-            projectPath: './tests',
-            default: false,
-        },
-        advanced: { babelConfig: createBabelOptions() },
-    },
-    tests: {
-        // side-effect default option: node-module unclear import
-        'should throw an error on an invalid option': {
-            code: `import "testmodule"`,
-            error: 'the `sideEffects.projectPath` option must be an absolute path',
-        },
-    },
-});
-
-// tests custom resolvers and async support
-const pathResolver = (() => {
-    const webpackConfig = require('./webpack.config.js');
-    const resolver = require('../src/pathResolver').defaultResolver(webpackConfig);
-    return (request, issuer) => {
-        return new Promise(ok => {
-            setTimeout(() => ok(resolver(request, issuer)), 50);
-        });
-    };
-})();
-
-const astResolver = (() => {
-    const babelConfig = createBabelOptions();
-    const resolver = require('../src/specResolver').defaultResolver(babelConfig);
-    return (filePath) => {
-        return new Promise(ok => {
-            setTimeout(() => ok(resolver(filePath)), 50);
-        });
-    };
-})();
-
-pluginTester({
-    plugin,
-    babel,
-    babelOptions,
-    pluginOptions: {
-        advanced: { pathResolver, astResolver, async: true },
-    },
-    tests: {
-        // custom, async resolvers
-        'should successfully transform with custom, async resolvers': {
-            code: `import init, { theFirstFunc, theSecondFunc } from "testmodule"`,
+        'should handle multiple common js imports': {
+            entry: '12 common js default with named import.js',
             output: `
-                import init from "./tests/testmodule/index.js";
-                import theFirstFunc from "./tests/testmodule/myFirstFunc.js";
-                import { mySecondFunc as theSecondFunc } from "./tests/testmodule/mySecondFunc.js";
+                import React from "./commonjsmodule/index.js";
+                import { Component } from "./commonjsmodule/index.js";
             `,
         },
-    },
+
+        'should be able to handle aliased namespaced re-exports': {
+            entry: '13 aliased namespace import.js',
+            output: `import * as thangs from "./testmodule/constants.js";`,
+        },
+
+        'should leave namespaced imports alone': {
+            entry: '14 namespace import.js',
+            output: `import * as testmodule from "./testmodule/index.js";`,
+        },
+
+        'should follow through export-from': {
+            entry: '15 export-from in single line.js',
+            output: `import theInlineFirstFunc from "./testmodule/myFirstFunc.js";`,
+        },
+
+        'should follow through export-from, even if never aliased': {
+            entry: '16 export-from un-aliased.js',
+            output: `import { myThirdFunc } from "./testmodule/myThirdFunc.js";`,
+        },
+
+        'should not follow past the first encountered default import, using import-from': {
+            entry: '17 import nested default export.js',
+            output: `import defaultFirstFunc from "./testmodule/defaultExport.js";`,
+        },
+
+        'should not follow past the first encountered default import, using export-from': {
+            entry: '18 import nested default export-from.js',
+            output: `import byNameDefaultNestedFunc from "./testmodule/defaultExport.js";`,
+        },
+
+        'should be able to resolve properly despite confusing naming': {
+            entry: '19 confusing naming.js',
+            output: `import { mySecondFunc as FOO } from "./testmodule/mySecondFunc.js";`,
+        },
+
+        'should be able to handle namespaced export-from': {
+            entry: '20 import of a namespaced export.js',
+            output: `import * as thungs from "./testmodule/constants.js";`,
+        },
+
+        'should be able to handle an aliased namespaced export-from': {
+            entry: '21 aliased import of a namespaced export.js',
+            output: `import * as myAliasedThungs from "./testmodule/constants.js";`,
+        }
+    }
+});
+
+loaderTester({
+    describe: 'webpack-specific functionality',
+    rules: setupRules({
+        ignoreSideEffects: true,
+        transformDefaultImports: true
+    }),
+    babelConfig: createBabelConfig(),
+    context: fixtureRoot('test-2'),
+    tests: {
+        'should be able to handle imports with inline loaders': {
+            entry: '1 inline loader.js',
+            output: `import theOneTrueAnswer from "val-loader!./testmodule/val-code.js";`,
+        }
+    }
+});
+
+loaderTester({
+    describe: 'with `transformDefaultImports === true`',
+    rules: setupRules({
+        ignoreSideEffects: true,
+        transformDefaultImports: true
+    }),
+    babelConfig: createBabelConfig(),
+    context: fixtureRoot('test-1'),
+    tests: {
+        'should follow past first encountered default import, using import-from': {
+            entry: '22 transformDefaultImports - import nested default export.js',
+            output: `import defaultFirstFunc from "./testmodule/myFirstFunc.js";`,
+        },
+
+        'should follow past first encountered default import, using export-from': {
+            entry: `23 transformDefaultImports - import nested default export-from.js`,
+            output: `import byNameDefaultNestedFunc from "./testmodule/myFirstFunc.js";`,
+        }
+    }
+});
+
+const sideEffectConfig = (config) => {
+    config.optimization = Object.assign(config.optimization || {}, {
+        providedExports: true,
+        sideEffects: true
+    });
+    return config;
+}
+
+loaderTester({
+    describe: 'with `ignoreSideEffects === false`',
+    rules: setupRules({
+        ignoreSideEffects: false
+    }),
+    webpackConfig: sideEffectConfig,
+    babelConfig: createBabelConfig(),
+    context: fixtureRoot('test-3'),
+    tests: {
+        'should stop when the local `package.json` declares side-effects': {
+            entry: '1 side-effecting local import.js',
+            output: `import { FOO as sideEffectFoo } from "./testmodule/sideEffects.js";`,
+        },
+
+        'should stop when a node-module\'s `package.json` declares side-effects': {
+            entry: '2 side-effecting node-module import.js',
+            output: `import { doTheThing } from "./node_modules/side-effecty/index.js";`,
+        },
+
+        'should transform when a node-module\'s `package.json` declares itself pure': {
+            entry: '3 pure node-module import.js',
+            output: `import doTheThing from "./node_modules/pure-boy/doTheThing.js";`,
+        }
+    }
+});
+
+loaderTester({
+    describe: 'with `Array.isArray(ignoreSideEffects) === true`',
+    rules: setupRules({
+        ignoreSideEffects: [
+            'side-effecty',
+            './testmodule/**/*'
+        ]
+    }),
+    webpackConfig: sideEffectConfig,
+    babelConfig: createBabelConfig(),
+    context: fixtureRoot('test-3'),
+    tests: {
+        'should ignore local side-effects': {
+            entry: '5 ignore side-effecting local import.js',
+            output: `import { FOO as sideEffectFoo } from "./testmodule/constants.js";`,
+        },
+
+        'should be able to ignore node-modules by name': {
+            entry: '6 ignore side-effecting node-module import.js',
+            output: `import doTheThing from "./node_modules/side-effecty/doTheThing.js";`,
+        }
+    }
 });

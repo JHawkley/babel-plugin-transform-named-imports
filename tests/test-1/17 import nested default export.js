@@ -1,0 +1,1 @@
+import { defaultFirstFunc } from "testmodule";

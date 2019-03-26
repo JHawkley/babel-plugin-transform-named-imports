@@ -1,0 +1,1 @@
+import { byNameDefaultExportFunc } from "testmodule";

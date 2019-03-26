@@ -1,0 +1,1 @@
+import { theFirstFunc as aliasedFunc } from "testmodule";

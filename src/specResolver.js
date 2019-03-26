@@ -1,29 +1,29 @@
-const types = require('./babelHelper').types;
-const pathHelper = require('./utils').pathHelper;
-const extractExportSpecifiers = require('./extractExportSpecifiers');
-const extractImportSpecifiers = require('./extractImportSpecifiers');
+const debug = require('debug')(require('./constants').loaderName);
+const types = require('@babel/core').types;
+const SideEffects = require('./sideEffects');
+const extractImports = require('./extractImportSpecifiers');
+const extractExports = require('./extractExportSpecifiers');
 
+/** @typedef {import('./index').Context} Context */
+/** @typedef {import('./babel').BabelAST} BabelAST */
+/** @typedef {import('./pathResolver')} PathResolver */
 /** @typedef {import('./extractImportSpecifiers').ImportSpecifier} ImportSpecifier */
 /** @typedef {import('./extractExportSpecifiers').ExportSpecifier} ExportSpecifier */
 
-/**
- * A Babel-compatible AST.
- * @typedef BabelAST
- */
-
-/**
- * A function that takes the absolute path to a module and tries to parse it
- * into a Babel-compatible AST.
- * @callback ResolveAstFn
- * @param {string} filePath The absolute path to the file to try to parse.
- * @returns {?BabelAST} A Babel-compatible AST or `null` if no AST could be
- * created, for any reason.
- */
+/** @typedef {import('webpack/Module')} WebpackModule */
 
 /**
  * @typedef SpecifierResult
  * @prop {ImportSpecifier[]} importSpecifiers The extracted import specifiers.
  * @prop {ExportSpecifier[]} exportSpecifiers The extracted export specifiers.
+ */
+
+/**
+ * @typedef LoadedModule
+ * @prop {string} path The absolute path to the module.
+ * @prop {string} source The module's source code.
+ * @prop {WebpackModule} instance The Webpack module instance.
+ * @prop {BabelAST} [ast] The Babel AST, if available.
  */
 
 const isImport = node =>
@@ -35,85 +35,119 @@ const isExport = node => {
     return false;
 };
 
+// eslint-disable-next-line jsdoc/require-param
+/** @type {function(Context, PathResolver): function(string): Promise.<?BabelAST>} */
+const makeAstResolver = (context, pathResolver) => {
+    const babel = require('./babel');
+    const { loader, cache, options: { babelConfig } } = context;
+    const initSideEffects = new SideEffects(context).init(pathResolver);
+
+    // eslint-disable-next-line jsdoc/require-param
+    /** @type {function(LoadedModule): Promise.<?BabelAST>} */
+    const parseAst = async ({path, source}) => {
+        try { return await babel.parseAst(path, source, babelConfig); }
+        catch (error) {
+            debug('PARSE AST ERROR', error);
+            return null;
+        }
+    };
+    
+    // eslint-disable-next-line jsdoc/require-param
+    /** @type {function(string): Promise.<?LoadedModule>} */
+    const loadModule = (path) => {
+        let cached = cache.module.get(path);
+        if (cached) return Promise.resolve(cached);
+
+        return new Promise(ok => {
+            loader.loadModule(path, (err, source, map, instance) => {
+                ok(err ? null : { path, source, instance });
+            });
+        });
+    };
+    
+    // eslint-disable-next-line jsdoc/require-param
+    /** @type {function(string): Promise.<?BabelAST>} */
+    return async (path) => {
+        const loaded = await loadModule(path);
+        if (!loaded) return null;
+
+        loader.addDependency(path);
+
+        const sideEffects = await initSideEffects;
+        if (sideEffects.test(loaded)) return null;
+
+        return loaded.ast || await parseAst(loaded);
+    };
+};
+
 /**
  * Resolves specifiers from a file.  Caches the results to speed later look-up.
  */
 class SpecResolver {
 
     /**
-     * Creates an ast-resolver that uses the installed Babel package.
-     * This is used if a custom `advanced.pathResolver` is not provided
-     * by the options.
-     * @static
-     * @param {Object} babelConfig
-     * @returns {ResolveAstFn}
-     */
-    static defaultResolver(babelConfig) {
-        return require('./babelHelper').makeParser(babelConfig);
-    }
-
-    /**
      * Initializes a new instance of {@link SpecResolver}.
-     * @param {ResolveAstFn} astResolver A function that can parse a file into
+     * 
+     * @param {Context} context A function that can parse a file into
      * a Babel AST.
-     * @param {import('./pathResolver')} pathResolver The path-resolver to use when
+     * @param {PathResolver} pathResolver The path-resolver to use when
      * resolving a file's path.
      */
-    constructor(astResolver, pathResolver, cache) {
-        this.cache = {};
-
-        this.astResolver = astResolver;
+    constructor(context, pathResolver) {
+        this.loader = context.loader;
+        this.cache = context.cache.specifier;
         this.pathResolver = pathResolver;
+        this.astResolver = makeAstResolver(context, pathResolver);
     }
 
     /**
      * Resolves a file's AST and gets the specifiers from it.
+     * 
+     * @async
      * @param {string} filePath The absolute path to the file to resolve specifiers for.
      * @returns {?SpecifierResult} An object containing the extracted specifiers or `null`
      * if no AST could be resolved.
      */
-    resolve(filePath) {
-        const cachedResult = this.cache[filePath];
-        if (cachedResult !== undefined) {
-            return cachedResult;
+    async resolve(filePath) {
+        let specifiers = this.cache.get(filePath);
+        if (typeof specifiers === 'undefined') {
+            const ast = await this.astResolver(filePath);
+            specifiers = await this.getSpecifiers(ast, filePath);
+
+            this.cache.set(filePath, specifiers);
         }
         
-        const ast = this.astResolver(filePath);
-        const specifiers = this.getSpecifiers(ast, filePath);
-
-        this.cache[filePath] = specifiers;
+        this.loader.addDependency(filePath);
         return specifiers;
     }
 
     /**
      * Gets the specifiers from a file, given its AST and the file's path.
-     * @param {*} ast The AST of the file.
+     * 
+     * @async
+     * @param {BabelAST} ast The AST of the file.
      * @param {string} filePath The absolute path to the file to generate specifiers for.
      * @returns {?SpecifierResult} An object containing the extracted specifiers or `null`
      * if no AST could be resolved.
      */
-    getSpecifiers(ast, filePath) {
-        if (!ast) {
-            return null;
-        }
+    async getSpecifiers(ast, filePath) {
+        if (!ast) return null;
 
-        const resolve = request => pathHelper(request, filePath, this.pathResolver);
+        // eslint-disable-next-line jsdoc/require-param
+        /** @type {function(string): Promise.<?string>} */
+        const resolve = request => this.pathResolver.resolve(request, filePath);
 
         const importDeclarations = [];
         const exportDeclarations = [];
 
         ast.program.body.forEach(dec => {
-            if (isImport(dec)) {
-                importDeclarations.push(dec);
-            }
-            else if (isExport(dec)) {
-                exportDeclarations.push(dec);
-            }
+            if (isImport(dec)) importDeclarations.push(dec);
+            else if (isExport(dec)) exportDeclarations.push(dec);
         });
         
         const specifiers = {
-            importSpecifiers: extractImportSpecifiers(importDeclarations, resolve),
-            exportSpecifiers: extractExportSpecifiers(exportDeclarations, resolve),
+            importSpecifiers: await extractImports(importDeclarations, resolve),
+            exportSpecifiers: await extractExports(exportDeclarations, resolve),
         };
 
         return specifiers;

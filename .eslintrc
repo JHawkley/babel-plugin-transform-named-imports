@@ -1,0 +1,22 @@
+{
+    "env": {
+        "node": true,
+        "es6": true
+    },
+    "globals": { "require": "readonly", "process": "readonly" },
+    "parserOptions": { "ecmaVersion": 8 },
+    "plugins": ["jsdoc"],
+    "extends": ["eslint:recommended"],
+    "rules": {
+        "no-console": "warn",
+        "jsdoc/check-examples": 1,
+        "jsdoc/check-param-names": 1,
+        "jsdoc/check-tag-names": 1,
+        "jsdoc/newline-after-description": 1,
+        "jsdoc/require-param": 1,
+        "jsdoc/require-param-name": 1,
+        "jsdoc/require-param-type": 1,
+        "jsdoc/require-returns-type": 1,
+        "jsdoc/valid-types": 1
+    }
+}
