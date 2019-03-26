@@ -1,0 +1,1 @@
+import { byNameDefaultNestedFunc } from "testmodule";

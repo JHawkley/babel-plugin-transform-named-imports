@@ -1,0 +1,1 @@
+import { FOO } from "testmodule";

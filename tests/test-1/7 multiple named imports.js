@@ -1,0 +1,1 @@
+import { theFirstFunc, theSecondFunc } from "testmodule";

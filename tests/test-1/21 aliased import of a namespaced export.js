@@ -1,0 +1,1 @@
+import { thungs as myAliasedThungs } from "testmodule";
