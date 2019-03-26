@@ -1,7 +1,9 @@
-const debug = require('debug')(require('./constants').loaderName);
+const debugFn = require('debug');
+const debugRoot = debugFn(require('./constants').loaderName);
 const loaderUtils = require('loader-utils');
 
 const core = require('./core');
+const utils = require('./utils');
 const validateOptions = require('./options').validate;
 const babel = require('@babel/core');
 const { createBabelPlugin, parseAst } = require('./babel');
@@ -31,7 +33,20 @@ const toTransformsMap = core.toTransformsMap;
  * @prop {Object} loader The Webpack loader context.
  * @prop {LoaderOptions} options The options for this loader.
  * @prop {Cache} cache The caches for the loader.
+ * @prop {Function} debug The debug handle for the current loader.
  */
+
+/** A custom debug formatter for arrays. */
+debugFn.formatters.A = (() => {
+    const util = require('util');
+    return function(v) {
+        if (!Array.isArray(v)) return debugFn.formatters.O(v);
+        if (v.length === 0) return '[]';
+        this.inspectOpts.colors = this.useColors;
+        v = v.map(el => `    ${util.inspect(el, this.inspectOpts).replace(/\n/g, '\n     ')},`);
+        return [].concat('[', ...v, ']').join('\n');
+    };
+})();
 
 /** @type {Map.<string, Cache} */
 const globalCache = new Map();
@@ -59,9 +74,12 @@ const finalize = (callback, cacheKey) => (err, result) => {
  * @returns {Tuple<string, Object>}
  */
 const transform = async (webpack, source, sourceMap, options, cache) => {
+    let result;
     const { resource, resourcePath } = webpack;
+    const debug = debugRoot.extend(`${options.ident}:${cache.module.size}`);
+    const contextRelative = utils.contextRelative(webpack.rootContext);
 
-    debug(`START(${cache.module.size})`, resource);
+    debug(`START`, contextRelative(resource));
 
     const ast = await parseAst(resourcePath, source, options.babelConfig);
 
@@ -69,41 +87,45 @@ const transform = async (webpack, source, sourceMap, options, cache) => {
     const importDeclarations = ast.program.body
         .filter(babel.types.isImportDeclaration);
     
-    if (importDeclarations.length === 0)
-        return [source, sourceMap];
-    
-    cache.module.set(resource, {
-        source, ast,
-        path: resource,
-        instance: webpack._module
-    });
+    if (importDeclarations.length === 0) {
+        result = [source, sourceMap];
+    }
+    else {
+        cache.module.set(resource, {
+            source, ast,
+            path: resource,
+            instance: webpack._module
+        });
 
-    const state = setupState({ options, cache, loader: webpack });
-    const allTransformsMap = new Map();
-    const kvps = await Promise.all(importDeclarations.map(toTransformsMap(state)));
-    
-    kvps.filter(Boolean).forEach(([path, dataKvps]) => {
-        let transformData = allTransformsMap.get(path);
-        if (!transformData) {
-            transformData = new Map();
-            allTransformsMap.set(path, transformData);
-        }
-        dataKvps.forEach(([name, data]) => transformData.set(name, data));
-    });
+        const state = setupState({ loader: webpack, options, cache, debug });
+        const allTransformsMap = new Map();
+        const kvps = await Promise.all(importDeclarations.map(toTransformsMap(state)));
+        
+        kvps.filter(Boolean).forEach(([path, dataKvps]) => {
+            let transformData = allTransformsMap.get(path);
+            if (!transformData) {
+                transformData = new Map();
+                allTransformsMap.set(path, transformData);
+            }
+            dataKvps.forEach(([name, data]) => transformData.set(name, data));
+        });
 
-    const babelPlugin = createBabelPlugin(allTransformsMap);
+        const babelPlugin = createBabelPlugin(allTransformsMap);
 
-    const { code, map } = await babel.transformFromAstAsync(ast, source, {
-        inputSourceMap: sourceMap || void 0,
-        configFile: false,
-        babelrc: false,
-        plugins: [babelPlugin]
-    });
+        const { code, map } = await babel.transformFromAstAsync(ast, source, {
+            inputSourceMap: sourceMap || void 0,
+            configFile: false,
+            babelrc: false,
+            plugins: [babelPlugin]
+        });
 
-    cache.module.delete(resource);
-    debug(`DONE (${cache.module.size})`, resource);
+        cache.module.delete(resource);
 
-    return [code, map];
+        result = [code, map];
+    }
+
+    debug(`DONE`, contextRelative(resource));
+    return result;
 };
 
 function transformImportsLoader(source, sourceMap) {

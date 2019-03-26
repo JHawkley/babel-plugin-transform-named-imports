@@ -45,7 +45,7 @@
   },
   "scripts": {
     "test": "jest",
-    "test-report": "DEBUG=\"resolve-imports-loader\" jest",
+    "test-report": "DEBUG=\"resolve-imports-loader:*\" jest",
     "debug-test": "node --inspect-brk node_modules/.bin/jest --runInBand"
   },
   "jest": {

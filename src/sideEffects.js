@@ -1,14 +1,13 @@
-const debug = require('debug')(require('./constants').loaderName);
 const ospath = require('path');
 
 const isPath = require('is-valid-path');
 const mm = require('micromatch');
 
+const PathResolver = require('./pathResolver');
 const utils = require('./utils');
 const fixPath = utils.appendCurPath;
 
 /** @typedef {import('./index').Context} Context */
-/** @typedef {import('./pathResolver')} PathResolver */
 /** @typedef {import('./specResolver').LoadedModule} LoadedModule */
 
 /** @typedef {{type: Symbol, val: string}} IgnoreResult */
@@ -33,7 +32,7 @@ class SideEffects {
      * @returns {Promise.<SideEffects>} A new, initializing {@link SideEffects} instance.
      */
     static create(context, pathResolver) {
-        return new SideEffects(context, pathResolver).init();
+        return new SideEffects(context).init(pathResolver);
     }
 
     /**
@@ -44,12 +43,10 @@ class SideEffects {
      * instead.
      * 
      * @param {Context} context The context object.
-     * @param {PathResolver} pathResolver The path-resolver.
      */
-    constructor(context, pathResolver) {
+    constructor(context) {
         const { ignoreSideEffects } = context.options;
         this.context = context;
-        this.pathResolver = pathResolver;
         this.didInit = false;
         this.enabled = ignoreSideEffects !== true;
         this.rootPath = context.loader.rootContext;
@@ -64,13 +61,16 @@ class SideEffects {
      * Initializes the ignore lists for this instance.
      * 
      * @async
+     * @param {PathResolver} pathResolver The path-resolver.
      * @returns {SideEffects} This instance.
      */
-    async init() {
+    async init(pathResolver) {
         if (this.didInit) return this;
         const { ignoreSideEffects } = this.context.options;
+        const debug = this.context.debug.extend('side-effects');
+        const haveIgnores = Array.isArray(ignoreSideEffects);
 
-        if (Array.isArray(ignoreSideEffects)) {
+        if (haveIgnores) {
             const { isInPath, checkPath, pathTypes: { dir: $dir } } = utils;
 
             // eslint-disable-next-line jsdoc/require-param
@@ -88,7 +88,7 @@ class SideEffects {
             // eslint-disable-next-line jsdoc/require-param
             /** @type {function(string): Promise.<IgnoreResult>} */
             const testModule = async (str) => {
-                const resolved = await this.pathResolver.resolvePath(str, this.rootPath);
+                const resolved = await pathResolver.resolvePath(str, this.rootPath);
                 return resolved ? { pattern: false, val: resolved } : null;
             };
 
@@ -114,18 +114,18 @@ class SideEffects {
                 this.ignoredPatterns = patterns;
             }
             catch (error) {
-                debug('SIDE-EFFECTS INIT FAILED', error);
+                debug('INIT FAILED', error);
                 throw error;
             }
         }
 
         this.didInit = true;
 
-        debug('SIDE-EFFECTS INIT COMPLETED');
-        debug('ENABLED', this.enabled);
-        debug('CONTEXT ROOT', this.rootPath);
-        debug('IGNORED MODULES', this.ignoredModules);
-        debug('IGNORED PATTERNS', this.ignoredPatterns);
+        debug(`INIT COMPLETED - ${this.enabled ? 'ENABLED' : 'DISABLED'}`);
+        if (this.enabled && haveIgnores) {
+            debug('IGNORED MODULES %A', this.ignoredModules);
+            debug('IGNORED PATTERNS %A', this.ignoredPatterns);
+        }
 
         return this;
     }
@@ -145,7 +145,7 @@ class SideEffects {
             throw new Error('cannot detect side-effects, the `loadedModule` was nullish');
         
         // decompose the path to remove webpack loaders, etc.
-        const modulePath = this.pathResolver.decompose(loadedModule.path).path;
+        const modulePath = PathResolver.decompose(loadedModule.path).path;
 
         if (!this.enabled) return false;
         if (this.isIgnored(modulePath)) return false;

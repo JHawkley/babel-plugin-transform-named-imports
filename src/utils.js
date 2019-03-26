@@ -19,6 +19,39 @@ const appendCurPath = (path) =>
     ospath.isAbsolute(path) || path.startsWith('.') ? path : './' + path;
 
 /**
+ * @callback ContextPathFn
+ * @param {string} path The path to make relative to the root-context.
+ * @returns {string} The path, relative to the root-context.
+ */
+
+/**
+ * Creates a function that can be used to determine the root-context relative
+ * path of a file.
+ * 
+ * @param {string} rootContext The root-context.
+ * @returns {ContextPathFn} A function that will make a path relative to the
+ * root-context.
+ */
+const contextRelative = (rootContext) => {
+    if (!ospath.isAbsolute(rootContext))
+        throw new Error('the `rootContext` must be an absolute path');
+    
+    const PathResolver = require('./pathResolver');
+
+    return (path) => {
+        if (!path) return null;
+    
+        const decomposed = PathResolver.decompose(path);
+        decomposed.path = appendCurPath(ospath.relative(
+            rootContext,
+            decomposed.path
+        ));
+    
+        return PathResolver.recompose(decomposed);
+    };
+};
+
+/**
  * Checks a path for accessibility and the type of file-system object
  * it points to.
  * 
@@ -59,6 +92,7 @@ const isInPath = (path, target) => {
 module.exports = {
     pathTypes,
     appendCurPath,
+    contextRelative,
     checkPath,
     isInPath
 };

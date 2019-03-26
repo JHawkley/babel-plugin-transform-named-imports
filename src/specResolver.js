@@ -1,4 +1,3 @@
-const debug = require('debug')(require('./constants').loaderName);
 const types = require('@babel/core').types;
 const SideEffects = require('./sideEffects');
 const extractImports = require('./extractImportSpecifiers');
@@ -39,15 +38,22 @@ const isExport = node => {
 /** @type {function(Context, PathResolver): function(string): Promise.<?BabelAST>} */
 const makeAstResolver = (context, pathResolver) => {
     const babel = require('./babel');
+    const utils = require('./utils');
+
+    const debug = context.debug.extend('ast-resolver');
     const { loader, cache, options: { babelConfig } } = context;
     const sideEffectsPromise = SideEffects.create(context, pathResolver);
+
+    const contextRelative
+        = debug.enabled ? utils.contextRelative(loader.rootContext)
+        : () => '(debug disabled)';
 
     // eslint-disable-next-line jsdoc/require-param
     /** @type {function(LoadedModule): Promise.<?BabelAST>} */
     const parseAst = async ({path, source}) => {
         try { return await babel.parseAst(path, source, babelConfig); }
         catch (error) {
-            debug('PARSE AST ERROR', error);
+            debug('PARSE ERROR', error);
             return null;
         }
     };
@@ -56,9 +62,13 @@ const makeAstResolver = (context, pathResolver) => {
     /** @type {function(string): Promise.<?LoadedModule>} */
     const loadModule = (path) => {
         let cached = cache.module.get(path);
-        if (cached) return Promise.resolve(cached);
+        if (cached) {
+            debug('MODULE FROM CACHE', contextRelative(path));
+            return Promise.resolve(cached);
+        }
 
         return new Promise(ok => {
+            debug('LOADING MODULE', contextRelative(path));
             loader.loadModule(path, (err, source, map, instance) => {
                 ok(err ? null : { path, source, instance });
             });
@@ -69,10 +79,17 @@ const makeAstResolver = (context, pathResolver) => {
     /** @type {function(string): Promise.<?BabelAST>} */
     return async (path) => {
         const loaded = await loadModule(path);
-        if (!loaded) return null;
+        if (!loaded) {
+            debug('MODULE LOAD FAILED', contextRelative(path));
+            return null;
+        }
 
         const sideEffects = await sideEffectsPromise;
-        if (sideEffects.test(loaded)) return null;
+
+        if (sideEffects.test(loaded)) {
+            debug('SIDE-EFFECTS DETECTED', contextRelative(path));
+            return null;
+        }
 
         return loaded.ast || await parseAst(loaded);
     };

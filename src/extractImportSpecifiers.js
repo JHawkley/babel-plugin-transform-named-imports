@@ -1,3 +1,4 @@
+const util = require('util');
 const $ = require('./constants');
 const types = require('@babel/core').types;
 
@@ -14,6 +15,13 @@ const types = require('@babel/core').types;
  * @prop {string} originalPath The original path that was used to import the module.
  * @prop {('default'|'namespace'|'named')} type The simple type.
  */
+
+/** @type {function(): string} */
+function customInspect() {
+    const { name, type, importedName: imp, searchName: search, originalPath: path } = this;
+    const asName = imp === name ? name : `${imp} as ${name}`;
+    return `${type} export { ${asName} } via ${search} from "${path}"`;
+};
 
 // eslint-disable-next-line jsdoc/require-param
 /** @type {function(ImportSpecifierNode): ('default'|'namespace'|'named')} */
@@ -60,6 +68,7 @@ module.exports = async (declarations, resolve) => {
                 path: importPath,
                 originalPath: originalPath,
                 type: type,
+                [util.inspect.custom]: customInspect
             };
         });
     });

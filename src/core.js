@@ -1,4 +1,3 @@
-const debug = require('debug')(require('./constants').loaderName);
 const ospath = require('path');
 
 const $ = require('./constants');
@@ -7,7 +6,7 @@ const SpecResolver = require('./specResolver');
 const PathResolver = require('./pathResolver');
 const SideEffects = require('./sideEffects');
 const extractImportSpecifiers = require('./extractImportSpecifiers');
-const { appendCurPath } = require('./utils');
+const utils = require('./utils');
 
 /** @typedef {import('./index').Context} Context */
 /** @typedef {import('./babel').ImportNode} ImportNode */
@@ -34,7 +33,10 @@ const { appendCurPath } = require('./utils');
  * @prop {string} sourcePath The path to the file being transformed by the plugin.
  * @prop {boolean} doDefaults Whether to transform default imports and exports.
  * @prop {function(Specifier): string} makeImportPath A function that will convert a
- * specifier into an import path.
+ * specifier into a module-relative import path.
+ * @prop {function(string): string} makeContextPath A function that will convert a
+ * specifier into a root-context relative path.
+ * @prop {Function} debug The debug handle for this state.
  */
 
 /**
@@ -53,6 +55,7 @@ const setupState = (context) => {
     const { loader, options } = context;
     const sourcePath = loader.resourcePath;
     const pathResolver = new PathResolver(context);
+    const debug = context.debug.extend('core');
 
     // takes the specifier and builds the path, we prefer
     // the absolute path to the file, but if we weren't
@@ -61,20 +64,28 @@ const setupState = (context) => {
         if (!specifier) return null;
         if (!specifier.path) return specifier.originalPath;
         
-        const decomposed = pathResolver.decompose(specifier.path);
-        decomposed.path = appendCurPath(ospath.relative(
+        const decomposed = PathResolver.decompose(specifier.path);
+        decomposed.path = utils.appendCurPath(ospath.relative(
             ospath.dirname(sourcePath),
             decomposed.path
         ));
 
-        return pathResolver.recompose(decomposed);
+        return PathResolver.recompose(decomposed);
     };
+
+    // takes a path and makes it relative to the root-context;
+    // we only care to run it if debugging is enabled, though
+    const makeContextPath
+        = debug.enabled ? utils.contextRelative(loader.rootContext)
+        : () => '(debug disabled)';
 
     return {
         loader,
+        debug,
         pathResolver,
         sourcePath,
         makeImportPath,
+        makeContextPath,
         specResolver: new SpecResolver(context, pathResolver),
         sideEffects: new SideEffects(context, pathResolver),
         doDefaults: options.transformDefaultImports
@@ -142,6 +153,7 @@ const toTransformsMap = (state) => async (node) => {
  * @returns {Specifier} The next specifier in the chain or `null` if it wasn't found.
  */
 const findNextSpecifier = async (state, specifier) => {
+    const { debug } = state;
     const { searchName, path, type } = specifier;
 
     // stop at namespaced imports; there's nothing more that we can do without
@@ -166,14 +178,14 @@ const findNextSpecifier = async (state, specifier) => {
     const { importSpecifiers, exportSpecifiers } = fileSpecifiers;
 
     debug('LOOKING FOR', searchName);
-    debug('SEARCHING FILE', path);
-    debug('IMPORTS', importSpecifiers);
-    debug('EXPORTS', exportSpecifiers);
+    debug('SEARCHING FILE', state.makeContextPath(path));
+    debug('IMPORTS %A', importSpecifiers);
+    debug('EXPORTS %A', exportSpecifiers);
 
     // search the export specifiers for a matching export
     const expPointer = exportSpecifiers.find(exp => exp.exportedName === searchName);
     if (expPointer) {
-        debug('FOUND IT!', expPointer);
+        debug('FOUND', expPointer);
 
         // it could be that this export is also an import in the same line
         if (expPointer.path) return expPointer;
@@ -181,7 +193,7 @@ const findNextSpecifier = async (state, specifier) => {
         // was it re-exported? find the matching local import
         const impPointer = importSpecifiers.find(imp => imp.name === expPointer.name);
         if (impPointer) {
-            debug('FOUND THE RE-EXPORT!', impPointer);
+            debug('RE-EXPORTED AS', impPointer);
             return impPointer;
         }
     }
@@ -214,6 +226,7 @@ const toExportedSpecifier = (state) => async (impSpecifier) => {
     if (!impSpecifier)
         throw new NullImportSpecifierError();
 
+    const { debug } = state;
     let depth = 0;
     let nextSpecifier = impSpecifier;
     let expSpecifier;

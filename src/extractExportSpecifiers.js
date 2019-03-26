@@ -1,3 +1,4 @@
+const util = require('util');
 const $ = require('./constants');
 const types = require('@babel/core').types;
 
@@ -17,6 +18,16 @@ const types = require('@babel/core').types;
 * @prop {?string} originalPath The original path that was used to import the module.
 * @prop {('default'|'namespace'|'named')} type The simple type.
 */
+
+/** @type {function(): string} */
+function customInspect() {
+    const { name, type, exportedName: exp, searchName: search, originalPath: path } = this;
+    const asName = exp === name ? name : `${exp} as ${name}`;
+    return [
+        `${type} export { ${asName} } via ${search}`,
+        path && `from "${path}"`
+    ].filter(Boolean).join(' ');
+}
 
 // eslint-disable-next-line jsdoc/require-param
 /** @type {function(ExportSpecifierNode): ('default'|'namespace'|'named')} */
@@ -47,6 +58,7 @@ const handleDefaultExport = (node) => {
         path: null,
         originalPath: null,
         type: $.default,
+        [util.inspect.custom]: customInspect
     };
 };
 
@@ -74,6 +86,7 @@ const handleOtherExport = async (node, resolve) => {
             path: importPath,
             originalPath: originalPath,
             type: type,
+            [util.inspect.custom]: customInspect
         };
     });
 };

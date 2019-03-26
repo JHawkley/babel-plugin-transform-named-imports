@@ -17,6 +17,36 @@ const rePath = /^(.*!)?(.*?)(\?.*)?$/;
 class PathResolver {
 
     /**
+     * Decomposes a request path into its Webpack loaders, module path, and query.
+     * 
+     * @static
+     * @param {string} request The request to decompose.
+     * @returns {DecomposedRequest} The decomposed request.
+     */
+    static decompose(request) {
+        const decomposedPath = rePath.exec(request);
+
+        if (!decomposedPath)
+            return { loaders: null, path: request, query: null };
+
+        const [, loaders, path, query] = decomposedPath;
+        return { loaders, path, query };
+    }
+
+    /**
+     * Recomposes a {@link DecomposedRequest} back into a proper Webpack path.
+     * 
+     * @static
+     * @param {DecomposedRequest} decomposed The decomposed Webpack path object.
+     * @returns {string} The recomposed request path.
+     */
+    static recompose(decomposed) {
+        if (!decomposed) return null;
+        const { loaders, path, query } = decomposed;
+        return [loaders, path, query].filter(Boolean).join('');
+    }
+
+    /**
      * Initializes a new instance of {@link PathResolver}.
      * 
      * @param {Context} context The path resolver function to use.
@@ -27,7 +57,7 @@ class PathResolver {
             return new Promise(ok => {
                 const dir = ospath.dirname(issuer);
                 context.loader.resolve(dir, request, (err, path) => {
-                    err ? ok(null) : ok(path);
+                    ok(err ? null : path);
                 });
             });
         };
@@ -45,9 +75,9 @@ class PathResolver {
      */
     async resolve(request, issuer) {
         // the issuer cannot have loaders attached to it
-        issuer = this.decompose(issuer).path;
+        issuer = PathResolver.decompose(issuer).path;
 
-        const decomposed = this.decompose(request);
+        const decomposed = PathResolver.decompose(request);
         const resolvedPath = await this.resolveImpl(decomposed.path, issuer);
         return this.integrate(resolvedPath, decomposed);
     }
@@ -64,38 +94,10 @@ class PathResolver {
      */
     async resolvePath(request, issuer) {
         // the issuer cannot have loaders attached to it
-        issuer = this.decompose(issuer).path;
+        issuer = PathResolver.decompose(issuer).path;
 
-        const decomposed = this.decompose(request);
+        const decomposed = PathResolver.decompose(request);
         return await this.resolveImpl(decomposed.path, issuer);
-    }
-
-    /**
-     * Decomposes a request path into its Webpack loaders, module path, and query.
-     * 
-     * @param {string} request The request to decompose.
-     * @returns {DecomposedRequest} The decomposed request.
-     */
-    decompose(request) {
-        const decomposedPath = rePath.exec(request);
-
-        if (!decomposedPath)
-            return { loaders: null, path: request, query: null };
-
-        const [, loaders, path, query] = decomposedPath;
-        return { loaders, path, query };
-    }
-
-    /**
-     * Recomposes a {@link DecomposedRequest} back into a proper Webpack path.
-     * 
-     * @param {DecomposedRequest} decomposed The decomposed Webpack path object.
-     * @returns {string} The recomposed request path.
-     */
-    recompose(decomposed) {
-        if (!decomposed) return null;
-        const { loaders, path, query } = decomposed;
-        return [loaders, path, query].filter(Boolean).join('');
     }
 
     /**
@@ -132,7 +134,7 @@ class PathResolver {
     integrate(resolvedPath, decomposed) {
         if (!resolvedPath) return null;
         decomposed.path = resolvedPath;
-        return this.recompose(decomposed);
+        return PathResolver.recompose(decomposed);
     }
 }
 
