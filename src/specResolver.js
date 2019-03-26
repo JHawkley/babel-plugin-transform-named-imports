@@ -103,13 +103,7 @@ const makeAstResolver = (context, pathResolver) => {
     /** @type {function(string): Promise.<?BabelAST>} */
     return async (path) => {
         const loaded = await loadModule(path);
-
-        if (!loaded) {
-            debug('MODULE LOAD FAILED', contextRelative(path));
-            return null;
-        }
-
-        return loaded.ast;
+        return loaded && loaded.ast;
     };
 };
 
