@@ -20,8 +20,8 @@ const types = require('@babel/core').types;
 function customInspect() {
     const { name, type, importedName: imp, searchName: search, originalPath: path } = this;
     const asName = imp === name ? name : `${imp} as ${name}`;
-    return `${type} export { ${asName} } via ${search} from "${path}"`;
-};
+    return `${type} import { ${asName} } via ${search} from "${path}"`;
+}
 
 // eslint-disable-next-line jsdoc/require-param
 /** @type {function(ImportSpecifierNode): ('default'|'namespace'|'named')} */
