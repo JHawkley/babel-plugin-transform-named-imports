@@ -1,109 +1,218 @@
 const types = require('@babel/core').types;
+const utils = require('./utils');
 const SideEffects = require('./sideEffects');
-const extractImports = require('./extractImportSpecifiers');
-const extractExports = require('./extractExportSpecifiers');
 
+/** @typedef {import('./index').Debug} Debug */
 /** @typedef {import('./index').Context} Context */
+/** @typedef {import('./index').LoaderContext} LoaderContext */
+/** @typedef {import('./index').WebpackModule} WebpackModule */
+/** @typedef {import('./options').LoaderOptions} LoaderOptions */
+/** @typedef {import('./core').State} State */
+/** @typedef {import('./utils').Future} Future */
 /** @typedef {import('./babel').BabelAST} BabelAST */
+/** @typedef {import('./babel').ImportNode} ImportNode */
+/** @typedef {import('./babel').ExportNode} ExportNode */
 /** @typedef {import('./pathResolver')} PathResolver */
+/** @typedef {import('./pathResolver').ResolvedPath} ResolvedPath */
 /** @typedef {import('./extractImportSpecifiers').ImportSpecifier} ImportSpecifier */
 /** @typedef {import('./extractExportSpecifiers').ExportSpecifier} ExportSpecifier */
 
-/** @typedef {import('webpack/Module')} WebpackModule */
-
 /**
- * @typedef SpecifierResult
- * @prop {ImportSpecifier[]} importSpecifiers The extracted import specifiers.
- * @prop {ExportSpecifier[]} exportSpecifiers The extracted export specifiers.
- */
-
-/**
+ * A loaded module.
+ * 
  * @typedef LoadedModule
- * @prop {string} path The absolute path to the module.
- * @prop {string} source The module's source code.
- * @prop {WebpackModule} instance The Webpack module instance.
- * @prop {Promise.<BabelAST>} ast A promise for the Babel AST.
+ * @prop {string} request
+ * The Webpack request path, including loaders and query parameters.
+ * @prop {string} resourcePath
+ * The actual, absolute path to the underlying resource.
+ * @prop {string} source
+ * The source of the module.
+ * @prop {WebpackModule} instance
+ * The module's Webpack instance.
+ * @prop {BabelAST} [ast]
+ * The AST of the module.
+ * @prop {boolean} [hasSideEffects]
+ * Whether Webpack reports that the module has side-effects.
  */
 
-const isImport = node =>
+/**
+ * @typedef WithSideEffects
+ * @prop {boolean} hasSideEffects
+ * Whether Webpack reports that the module has side-effects.
+ */
+
+/**
+ * The specifiers of a module.
+ * 
+ * @typedef SpecifierResult
+ * @prop {ImportSpecifier[]} importSpecifiers
+ * The extracted import specifiers.
+ * @prop {ExportSpecifier[]} exportSpecifiers
+ * The extracted export specifiers.
+ */
+
+const $$filterSideEffects = Symbol('spec-resolver:filter-side-effects');
+const $$parseAst = Symbol('spec-resolver:parse-ast');
+const $$getSpecifiers = Symbol('spec-resolver:get-specifiers');
+const $$getFutureFor = Symbol('spec-resolver:get-future-for');
+
+/**
+ * @param {*} node
+ * @returns {node is ImportNode}
+ */
+const isImport = (node) =>
     types.isImportDeclaration(node);
 
-const isExport = node => {
+/**
+ * @param {*} node
+ * @returns {node is ExportNode}
+ */
+const isExport = (node) => {
     if (types.isExportDefaultDeclaration(node)) return true;
     if (types.isExportNamedDeclaration(node)) return true;
     return false;
 };
 
-// eslint-disable-next-line jsdoc/require-param
-/** @type {function(Context, PathResolver): function(string): Promise.<?BabelAST>} */
-const makeAstResolver = (context, pathResolver) => {
+/**
+ * Creates a private method that filters modules with side-effects.
+ * 
+ * @currying 2,1,1
+ * @param {string} rootContext
+ * @param {Promise.<SideEffects>} initSideEffects
+ * @param {Debug} debug
+ * @param {?LoadedModule} loadedModule
+ * @returns {Promise.<?LoadedModule>}
+ */
+const _filterSideEffects = (rootContext, initSideEffects) => (debug) => {
+    return async function hasSideEffectsImpl(loadedModule) {
+        if (!loadedModule) return null;
+        if (typeof loadedModule.hasSideEffects === 'boolean') return loadedModule;
+
+        const { request, resourcePath, instance } = loadedModule;
+        const sideEffectsReported
+            = !instance.factoryMeta ? true
+            : !instance.factoryMeta.sideEffectFree;
+
+        const sideEffects = await initSideEffects;
+        const hasSideEffects = sideEffects.test(resourcePath, sideEffectsReported);
+
+        if (hasSideEffects && debug.enabled) {
+            const relativePath = utils.contextRelative(rootContext, request);
+            debug('SIDE-EFFECTS DETECTED', relativePath);
+        }
+
+        loadedModule.hasSideEffects = hasSideEffects;
+        return loadedModule;
+    };
+};
+
+/**
+ * Creates a private method that attempts to parse a module's source to a
+ * Babel AST.
+ * 
+ * @currying 2,1,1
+ * @param {string} rootContext
+ * @param {Object} babelConfig
+ * @param {Debug} debug
+ * @param {?LoadedModule} loadedModule
+ * @returns {Promise.<?LoadedModule>}
+ */
+const _parseAst = (rootContext, babelConfig) => (debug) => {
     const babel = require('./babel');
-    const utils = require('./utils');
 
-    const debug = context.debug.extend('ast-resolver');
-    const { loader, cache, options: { babelConfig } } = context;
-    const sideEffectsPromise = SideEffects.create(context, pathResolver);
+    return async function parseAstImpl(loadedModule) {
+        if (!loadedModule) return null;
+        if (loadedModule.ast) return loadedModule;
+        if (loadedModule.hasSideEffects === true) return loadedModule;
 
-    const contextRelative
-        = debug.enabled ? utils.contextRelative(loader.rootContext)
-        : () => '(debug disabled)';
+        const { request, resourcePath, source } = loadedModule;
 
-    // eslint-disable-next-line jsdoc/require-param
-    /** @type {function(LoadedModule): Promise.<?BabelAST>} */
-    const parseAst = async (path, source) => {
-        try { return await babel.parseAst(path, source, babelConfig); }
+        try {
+            loadedModule.ast = await babel.parseAst(resourcePath, source, babelConfig);
+            return loadedModule;
+        }
         catch (error) {
-            debug('PARSE ERROR', error);
-            return null;
+            const relativePath = utils.contextRelative(rootContext, request);
+            debug('AST PARSING ERROR %A', [relativePath, error]);
+            throw error;
         }
     };
+};
 
-    const finalizeModule = async (path, source, instance) => {
-        const loaded = { path, source, instance, ast: null };
-        const sideEffects = await sideEffectsPromise;
+/**
+ * Creates a private method that attempts to convert an AST into import and
+ * export specifiers.
+ * 
+ * @currying 0,2,1
+ * @param {PathResolver} pathResolver
+ * @param {Debug} debugPath
+ * @param {?LoadedModule} loadedModule
+ * @returns {Promise.<?(SpecifierResult & WithSideEffects)>}
+ */
+const _getSpecifiers = () => (pathResolver, debugPath) => {
+    const extractImports = require('./extractImportSpecifiers');
+    const extractExports = require('./extractExportSpecifiers');
 
-        if (sideEffects.test(loaded)) {
-            debug('SIDE-EFFECTS DETECTED', contextRelative(path));
-            return null;
-        }
+    return async function getSpecifiersImpl(loadedModule) {
+        if (!loadedModule) return null;
+        if (!loadedModule.ast) return null;
 
-        const ast = await parseAst(path, source);
-        if (!ast) return null;
+        const { request: issuer, ast, hasSideEffects } = loadedModule;
 
-        loaded.ast = ast;
-        return loaded;
-    };
-    
-    // eslint-disable-next-line jsdoc/require-param
-    /** @type {function(string): Promise.<?LoadedModule>} */
-    const loadModule = async (path) => {
-        let cached = cache.module.get(path);
-        if (cached) {
-            debug('MODULE FROM CACHE', contextRelative(path));
-            return await cached;
-        }
+        /**
+         * @function
+         * @param {string} request
+         * @returns {Promise.<ResolvedPath>}
+         */
+        const resolve = (request) => pathResolver.resolve(request, issuer, debugPath);
 
-        const promisedModule = new Promise(ok => {
-            debug('LOADING MODULE', contextRelative(path));
-            loader.loadModule(path, (err, source, map, instance) => {
-                if (err) debug('MODULE LOAD ERROR', err);
-                ok(err ? null : finalizeModule(path, source, instance));
-            });
+        const importDeclarations = [];
+        const exportDeclarations = [];
+
+        ast.program.body.forEach(dec => {
+            if (isImport(dec)) importDeclarations.push(dec);
+            else if (isExport(dec)) exportDeclarations.push(dec);
         });
 
-        // temporarily store the module into the cache
-        cache.module.set(path, promisedModule);
-        const newModule = await promisedModule;
-        cache.module.delete(path);
+        const specifiers = {
+            hasSideEffects: typeof hasSideEffects === 'boolean' ? hasSideEffects : true,
+            importSpecifiers: await extractImports(importDeclarations, resolve),
+            exportSpecifiers: await extractExports(exportDeclarations, resolve)
+        };
 
-        return newModule;
+        return specifiers;
     };
-    
-    // eslint-disable-next-line jsdoc/require-param
-    /** @type {function(string): Promise.<?BabelAST>} */
-    return async (path) => {
-        const loaded = await loadModule(path);
-        return loaded && loaded.ast;
+};
+
+/**
+ * Creates a private method that attempts to convert an AST into import and
+ * export specifiers.
+ * 
+ * @currying 0,2
+ * @param {State} state
+ * @param {string} modulePath
+ * @returns {({ isNew: boolean, future: Future.<LoadedModule, (SpecifierResult & WithSideEffects)>})}
+ */
+const _getFutureFor = () => {
+    return function getFutureFor(state, modulePath) {
+        let isNew = false;
+        let future = this.specCache.get(modulePath);
+
+        if (typeof future === 'undefined') {
+            const { pathResolver, debugSpec, debugPath } = state;
+
+            future = utils.future(modulePath, (promise) => {
+                return promise
+                    .then(this[$$filterSideEffects](debugSpec))
+                    .then(this[$$parseAst](debugSpec))
+                    .then(this[$$getSpecifiers](pathResolver, debugPath));
+            });
+
+            isNew = true;
+            this.specCache.set(modulePath, future);
+        }
+
+        return { isNew, future };
     };
 };
 
@@ -115,69 +224,95 @@ class SpecResolver {
     /**
      * Initializes a new instance of {@link SpecResolver}.
      * 
-     * @param {Context} context A function that can parse a file into
-     * a Babel AST.
-     * @param {PathResolver} pathResolver The path-resolver to use when
-     * resolving a file's path.
+     * @param {LoaderContext} loader
+     * The loader context.
+     * @param {LoaderOptions} options
+     * The loader options.
+     * @param {PathResolver} pathResolver
+     * The path-resolver to use when resolving a module's path.
+     * @param {Debug} debugRoot
+     * The root debug instance.
      */
-    constructor(context, pathResolver) {
-        this.loader = context.loader;
-        this.cache = context.cache.specifier;
-        this.pathResolver = pathResolver;
-        this.astResolver = makeAstResolver(context, pathResolver);
+    constructor(loader, options, pathResolver, debugRoot) {
+        const { rootContext } = loader;
+        const sideEffects = SideEffects.create(
+            rootContext, options, pathResolver, debugRoot
+        );
+
+        /** @type {Map.<string, Future.<LoadedModule, SpecifierResult>} */
+        this.specCache = new Map();
+
+        this[$$filterSideEffects] = _filterSideEffects(rootContext, sideEffects);
+        this[$$parseAst] = _parseAst(rootContext, options.babelConfig);
+        this[$$getSpecifiers] = _getSpecifiers();
+        this[$$getFutureFor] = _getFutureFor();
     }
 
     /**
-     * Resolves a file's AST and gets the specifiers from it.
+     * Caches the specifiers for a module.
      * 
      * @async
-     * @param {string} filePath The absolute path to the file to resolve specifiers for.
-     * @returns {?SpecifierResult} An object containing the extracted specifiers or `null`
-     * if no AST could be resolved.
+     * @param {State} state
+     * The working state.
+     * @param {LoadedModule} loadedModule
+     * The loaded module.
+     * @returns {?({ ast: BabelAST, specifiers: SpecifierResult })}
+     * A promise that will complete with the module's AST and specifiers, once they
+     * have been resolved.
      */
-    async resolve(filePath) {
-        let specifiers = this.cache.get(filePath);
-        if (typeof specifiers === 'undefined') {
-            const ast = await this.astResolver(filePath);
-            specifiers = await this.getSpecifiers(ast, filePath);
+    async registerModule(state, loadedModule) {
+        const { debugSpec } = state;
+        const { request } = loadedModule;
 
-            this.cache.set(filePath, specifiers);
+        // begin resolving the AST; we want to produce specifiers despite the
+        // side-effect status of the module
+        loadedModule = await this[$$parseAst](debugSpec)(loadedModule);
+
+        const { future } = this[$$getFutureFor](state, request);
+        if (!future.didComplete) future.resolve(loadedModule);
+        const specifiers = await future.promise;
+
+        if (!loadedModule.ast || !specifiers)
+            return null;
+
+        return { ast: loadedModule.ast, specifiers };
+    }
+
+    /**
+     * Resolves a module's AST and gets the specifiers from it.
+     * 
+     * @async
+     * @param {State} state
+     * The working state.
+     * @param {string} request
+     * The request path to the module to resolve specifiers for.  The path-portion
+     * of the request must be an absolute path.
+     * @returns {?SpecifierResult}
+     * An object containing the extracted specifiers or `null` if no AST could
+     * be resolved of the module had side-effects.
+     */
+    async resolve(state, request) {
+        const { isNew, future } = this[$$getFutureFor](state, request);
+
+        if (isNew) {
+            state.loadModule(request).then(
+                (loadedModule) => !future.didComplete && future.resolve(loadedModule),
+                (reason) => !future.didComplete && future.reject(reason)
+            );
         }
-        
-        this.loader.addDependency(filePath);
-        return specifiers;
-    }
+        else {
+            state.loader.addDependency(request);
+        }
 
-    /**
-     * Gets the specifiers from a file, given its AST and the file's path.
-     * 
-     * @async
-     * @param {BabelAST} ast The AST of the file.
-     * @param {string} filePath The absolute path to the file to generate specifiers for.
-     * @returns {?SpecifierResult} An object containing the extracted specifiers or `null`
-     * if no AST could be resolved.
-     */
-    async getSpecifiers(ast, filePath) {
-        if (!ast) return null;
+        try {
+            const specifiers = await future.promise;
+            if (!specifiers || specifiers.hasSideEffects) return null;
 
-        // eslint-disable-next-line jsdoc/require-param
-        /** @type {function(string): Promise.<?string>} */
-        const resolve = request => this.pathResolver.resolve(request, filePath);
-
-        const importDeclarations = [];
-        const exportDeclarations = [];
-
-        ast.program.body.forEach(dec => {
-            if (isImport(dec)) importDeclarations.push(dec);
-            else if (isExport(dec)) exportDeclarations.push(dec);
-        });
-        
-        const specifiers = {
-            importSpecifiers: await extractImports(importDeclarations, resolve),
-            exportSpecifiers: await extractExports(exportDeclarations, resolve),
-        };
-
-        return specifiers;
+            return specifiers;
+        }
+        catch (error) {
+            return null;
+        }
     }
 }
 

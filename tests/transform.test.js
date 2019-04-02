@@ -3,7 +3,7 @@ const path = require('path');
 const loaderTester = require('./loader-tester');
 
 const loader = path.resolve(__dirname, '../src/index.js');
-jest.setTimeout(20000);
+jest.setTimeout(30000);
 
 const createBabelConfig = (options) => {
     let baseOptions = {
@@ -12,7 +12,7 @@ const createBabelConfig = (options) => {
         plugins: [
             '@babel/plugin-proposal-export-namespace-from',
             '@babel/plugin-syntax-dynamic-import',
-            '@babel/plugin-syntax-import-meta',
+            '@babel/plugin-syntax-import-meta'
         ],
         presets: [
             ["@babel/preset-env", { targets: { esmodules: true } }]
@@ -24,7 +24,7 @@ const createBabelConfig = (options) => {
 
 const fixtureRoot = (fixtureDir) => path.resolve(__dirname, fixtureDir);
 
-const setupRules = (loaderOptions = {}) => ({babelConfig}) => {
+const setupRules = (loaderOptions = {}) => ({babelConfig, enforce}) => {
     const use = [];
 
     if (babelConfig) {
@@ -34,132 +34,145 @@ const setupRules = (loaderOptions = {}) => ({babelConfig}) => {
 
     use.push({ loader, options: loaderOptions });
     
-    return [{ test: /\.js$/, use }];
+    return [{ test: /\.js$/, enforce, use }];
+};
+
+const coreTests = {
+    'should leave imports with no specifiers alone': {
+        entry: '1 bare import.js',
+        output: `import 'testmodule';`,
+    },
+
+    'should convert named imports to default equivalent': {
+        entry: '2 single named import.js',
+        output: `import theFirstFunc from "./testmodule/myFirstFunc.js";`,
+    },
+
+    'should convert by-name default import to default equivalent': {
+        entry: '3 import default module by-name then re-export.js',
+        output: `import byNameDefaultImportFunc from "./testmodule/myFirstFunc.js";`,
+    },
+
+    'should convert by-name default export-from to default equivalent': {
+        entry: '4 export-from default module by-name.js',
+        output: `import byNameDefaultExportFunc from "./testmodule/myFirstFunc.js";`,
+    },
+
+    'should be able to follow through multiple re-exports': {
+        entry: '5 import module re-exported multiple times.js',
+        output: `import { mySecondFunc as theExportedSecondFunc } from "./testmodule/mySecondFunc.js";`,
+    },
+
+    'should be able to follow through multiple aliases': {
+        entry: `6 import module aliased multiple times.js`,
+        output: `import { mySecondFunc as theSecondFunc } from "./testmodule/mySecondFunc.js";`,
+    },
+
+    'should be able to handle multiple named imports': {
+        entry: `7 multiple named imports.js`,
+        output: `
+            import theFirstFunc from "./testmodule/myFirstFunc.js";
+            import { mySecondFunc as theSecondFunc } from "./testmodule/mySecondFunc.js";
+        `,
+    },
+
+    'should be able to handle default and multiple named imports': {
+        entry: '8 default import with multiple named import.js',
+        output: `
+            import init from "./testmodule/index.js";
+            import theFirstFunc from "./testmodule/myFirstFunc.js";
+            import { mySecondFunc as theSecondFunc } from "./testmodule/mySecondFunc.js";
+        `,
+    },
+
+    'should correctly handle aliased imports': {
+        entry: '9 aliased named import.js',
+        output: `import aliasedFunc from "./testmodule/myFirstFunc.js";`,
+    },
+
+    'should leave single default imports alone': {
+        entry: `10 default import.js`,
+        output: `import myFirstFunc from "testmodule/myFirstFunc";`,
+    },
+
+    'should leave single default common js imports alone': {
+        entry: '11 common js default import.js',
+        output: `import React from "commonjsmodule";`,
+    },
+
+    'should handle multiple common js imports': {
+        entry: '12 common js default with named import.js',
+        output: `
+            import React from "./commonjsmodule/index.js";
+            import { Component } from "./commonjsmodule/index.js";
+        `,
+    },
+
+    'should be able to handle aliased namespaced re-exports': {
+        entry: '13 aliased namespace import.js',
+        output: `import * as thangs from "./testmodule/constants.js";`,
+    },
+
+    'should leave namespaced imports alone': {
+        entry: '14 namespace import.js',
+        output: `import * as testmodule from "./testmodule/index.js";`,
+    },
+
+    'should follow through export-from': {
+        entry: '15 export-from in single line.js',
+        output: `import theInlineFirstFunc from "./testmodule/myFirstFunc.js";`,
+    },
+
+    'should follow through export-from, even if never aliased': {
+        entry: '16 export-from un-aliased.js',
+        output: `import { myThirdFunc } from "./testmodule/myThirdFunc.js";`,
+    },
+
+    'should not follow past the first encountered default import, using import-from': {
+        entry: '17 import nested default export.js',
+        output: `import defaultFirstFunc from "./testmodule/defaultExport.js";`,
+    },
+
+    'should not follow past the first encountered default import, using export-from': {
+        entry: '18 import nested default export-from.js',
+        output: `import byNameDefaultNestedFunc from "./testmodule/defaultExport.js";`,
+    },
+
+    'should be able to resolve properly despite confusing naming': {
+        entry: '19 confusing naming.js',
+        output: `import { mySecondFunc as FOO } from "./testmodule/mySecondFunc.js";`,
+    },
+
+    'should be able to handle namespaced export-from': {
+        entry: '20 import of a namespaced export.js',
+        output: `import * as thungs from "./testmodule/constants.js";`,
+    },
+
+    'should be able to handle an aliased namespaced export-from': {
+        entry: '21 aliased import of a namespaced export.js',
+        output: `import * as myAliasedThungs from "./testmodule/constants.js";`,
+    }
 };
 
 loaderTester({
-    describe: 'core functionality',
+    describe: 'core functionality (async mode)',
     rules: setupRules({
         ignoreSideEffects: true
     }),
     babelConfig: createBabelConfig(),
     context: fixtureRoot('test-1'),
-    tests: {
-        'should leave imports with no specifiers alone': {
-            entry: '1 bare import.js',
-            output: `import 'testmodule';`,
-        },
+    tests: coreTests,
+});
 
-        'should convert named imports to default equivalent': {
-            entry: '2 single named import.js',
-            output: `import theFirstFunc from "./testmodule/myFirstFunc.js";`,
-        },
-
-        'should convert by-name default import to default equivalent': {
-            entry: '3 import default module by-name then re-export.js',
-            output: `import byNameDefaultImportFunc from "./testmodule/myFirstFunc.js";`,
-        },
-
-        'should convert by-name default export-from to default equivalent': {
-            entry: '4 export-from default module by-name.js',
-            output: `import byNameDefaultExportFunc from "./testmodule/myFirstFunc.js";`,
-        },
-
-        'should be able to follow through multiple re-exports': {
-            entry: '5 import module re-exported multiple times.js',
-            output: `import { mySecondFunc as theExportedSecondFunc } from "./testmodule/mySecondFunc.js";`,
-        },
-
-        'should be able to follow through multiple aliases': {
-            entry: `6 import module aliased multiple times.js`,
-            output: `import { mySecondFunc as theSecondFunc } from "./testmodule/mySecondFunc.js";`,
-        },
-
-        'should be able to handle multiple named imports': {
-            entry: `7 multiple named imports.js`,
-            output: `
-                import theFirstFunc from "./testmodule/myFirstFunc.js";
-                import { mySecondFunc as theSecondFunc } from "./testmodule/mySecondFunc.js";
-            `,
-        },
-
-        'should be able to handle default and multiple named imports': {
-            entry: '8 default import with multiple named import.js',
-            output: `
-                import init from "./testmodule/index.js";
-                import theFirstFunc from "./testmodule/myFirstFunc.js";
-                import { mySecondFunc as theSecondFunc } from "./testmodule/mySecondFunc.js";
-            `,
-        },
-
-        'should correctly handle aliased imports': {
-            entry: '9 aliased named import.js',
-            output: `import aliasedFunc from "./testmodule/myFirstFunc.js";`,
-        },
-
-        'should leave single default imports alone': {
-            entry: `10 default import.js`,
-            output: `import myFirstFunc from "testmodule/myFirstFunc";`,
-        },
-
-        'should leave single default common js imports alone': {
-            entry: '11 common js default import.js',
-            output: `import React from "commonjsmodule";`,
-        },
-
-        'should handle multiple common js imports': {
-            entry: '12 common js default with named import.js',
-            output: `
-                import React from "./commonjsmodule/index.js";
-                import { Component } from "./commonjsmodule/index.js";
-            `,
-        },
-
-        'should be able to handle aliased namespaced re-exports': {
-            entry: '13 aliased namespace import.js',
-            output: `import * as thangs from "./testmodule/constants.js";`,
-        },
-
-        'should leave namespaced imports alone': {
-            entry: '14 namespace import.js',
-            output: `import * as testmodule from "./testmodule/index.js";`,
-        },
-
-        'should follow through export-from': {
-            entry: '15 export-from in single line.js',
-            output: `import theInlineFirstFunc from "./testmodule/myFirstFunc.js";`,
-        },
-
-        'should follow through export-from, even if never aliased': {
-            entry: '16 export-from un-aliased.js',
-            output: `import { myThirdFunc } from "./testmodule/myThirdFunc.js";`,
-        },
-
-        'should not follow past the first encountered default import, using import-from': {
-            entry: '17 import nested default export.js',
-            output: `import defaultFirstFunc from "./testmodule/defaultExport.js";`,
-        },
-
-        'should not follow past the first encountered default import, using export-from': {
-            entry: '18 import nested default export-from.js',
-            output: `import byNameDefaultNestedFunc from "./testmodule/defaultExport.js";`,
-        },
-
-        'should be able to resolve properly despite confusing naming': {
-            entry: '19 confusing naming.js',
-            output: `import { mySecondFunc as FOO } from "./testmodule/mySecondFunc.js";`,
-        },
-
-        'should be able to handle namespaced export-from': {
-            entry: '20 import of a namespaced export.js',
-            output: `import * as thungs from "./testmodule/constants.js";`,
-        },
-
-        'should be able to handle an aliased namespaced export-from': {
-            entry: '21 aliased import of a namespaced export.js',
-            output: `import * as myAliasedThungs from "./testmodule/constants.js";`,
-        }
-    }
+loaderTester({
+    describe: 'core functionality (sync mode)',
+    rules: setupRules({
+        syncMode: true,
+        ignoreSideEffects: true
+    }),
+    babelConfig: createBabelConfig(),
+    context: fixtureRoot('test-1'),
+    tests: coreTests,
 });
 
 loaderTester({
@@ -205,7 +218,7 @@ const sideEffectConfig = (config) => {
         sideEffects: true
     });
     return config;
-}
+};
 
 loaderTester({
     describe: 'with `ignoreSideEffects === false`',
@@ -253,6 +266,9 @@ loaderTester({
     }),
     webpackConfig: sideEffectConfig,
     babelConfig: createBabelConfig(),
+    // this test uses inline loaders;
+    // enforcing post ensures they transform first
+    enforce: 'post',
     context: fixtureRoot('test-3'),
     tests: {
         'should ignore local side-effects': {

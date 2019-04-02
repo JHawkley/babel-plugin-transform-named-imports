@@ -4,27 +4,41 @@ const types = require('@babel/core').types;
 
 /** @typedef {import('./babel').ImportSpecifierNode} ImportSpecifierNode */
 /** @typedef {import('./babel').ImportNode} ImportNode */
-/** @typedef {function(string): Promise.<?string>} ResolveFn */
+/** @typedef {import('./pathResolver').ResolvedPath} ResolvedPath */
+
+/**
+ * @callback ResolveFn
+ * @param {string} resolve
+ * @returns {Promise.<ResolvedPath>}
+ */
 
 /**
  * @typedef ImportSpecifier
  * @prop {string} name The local name of the imported value.
  * @prop {string} importedName The name of the value, as it was exported by its module.
  * @prop {string} searchName The name to search for when locating related exports.
- * @prop {?string} path The absolute path of the imported module, if resolved.
- * @prop {string} originalPath The original path that was used to import the module.
+ * @prop {ResolvedPath} path The resolved path of the imported module.
  * @prop {('default'|'namespace'|'named')} type The simple type.
  */
 
-/** @type {function(): string} */
+/**
+ * A custom inspector for debugging.
+ * 
+ * @function
+ * @this {ImportSpecifier}
+ * @returns {string}
+ */
 function customInspect() {
-    const { name, type, importedName: imp, searchName: search, originalPath: path } = this;
+    const { name, type, importedName: imp, searchName: search, path: { original } } = this;
     const asName = imp === name ? name : `${imp} as ${name}`;
-    return `${type} import { ${asName} } via ${search} from "${path}"`;
+    return `${type} import { ${asName} } via ${search} from "${original}"`;
 }
 
-// eslint-disable-next-line jsdoc/require-param
-/** @type {function(ImportSpecifierNode): ('default'|'namespace'|'named')} */
+/**
+ * @function
+ * @param {ImportSpecifierNode} node
+ * @returns {('default'|'namespace'|'named')}
+ */
 const getSimpleType = (node) => {
     const { imported } = node;
 
@@ -39,16 +53,16 @@ const getSimpleType = (node) => {
  * Given an array of import declarations, produces an array of import specifiers.
  * 
  * @async
- * @param {ImportNode[]} declarations The declarations extract specifiers from.
- * @param {ResolveFn} resolve A function that resolves a relative path to
- * an absolute path.
+ * @param {ImportNode[]} declarations
+ * The declarations extract specifiers from.
+ * @param {ResolveFn} resolve
+ * A function that resolves a relative path to an absolute path.
  * @returns {ImportSpecifier[]}
  */
 module.exports = async (declarations, resolve) => {
     const promisedImps = declarations.map(async (node) => {
         const specifiers = node.specifiers || [];
-        const originalPath = node.source.value;
-        const importPath = await resolve(originalPath);
+        const resolvedPath = await resolve(node.source.value);
 
         return specifiers.map((specifier) => {
             const type = getSimpleType(specifier);
@@ -65,14 +79,14 @@ module.exports = async (declarations, resolve) => {
                 name: localName,
                 importedName: importedName,
                 searchName: importedName,
-                path: importPath,
-                originalPath: originalPath,
+                path: resolvedPath,
                 type: type,
                 [util.inspect.custom]: customInspect
             };
         });
     });
 
-    const imps = await Promise.all(promisedImps);
-    return [].concat(...imps).filter(Boolean);
+    return Array.prototype.concat
+        .apply([], await Promise.all(promisedImps))
+        .filter(Boolean);
 };

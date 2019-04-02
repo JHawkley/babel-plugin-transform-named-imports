@@ -3,12 +3,13 @@ const ospath = require('path');
 const isPath = require('is-valid-path');
 const mm = require('micromatch');
 
-const PathResolver = require('./pathResolver');
 const utils = require('./utils');
 const fixPath = utils.appendCurPath;
 
 /** @typedef {import('./index').Context} Context */
-/** @typedef {import('./specResolver').LoadedModule} LoadedModule */
+/** @typedef {import('./index').LoaderContext} LoaderContext */
+/** @typedef {import('./options').LoaderOptions} LoaderOptions */
+/** @typedef {import('./pathResolver')} PathResolver */
 
 /** @typedef {{type: Symbol, val: string}} IgnoreResult */
 
@@ -27,12 +28,19 @@ class SideEffects {
      * Be sure to `await` on the promise before using it.
      * 
      * @static
-     * @param {Context} context The context object.
-     * @param {PathResolver} pathResolver The path-resolver.
-     * @returns {Promise.<SideEffects>} A new, initializing {@link SideEffects} instance.
+     * @param {string} rootContext
+     * The root-context path.
+     * @param {LoaderOptions} options
+     * The loader options.
+     * @param {PathResolver} pathResolver
+     * The path-resolver to use when resolving a file's path.
+     * @param {Debug} debugRoot
+     * The root debug instance.
+     * @returns {Promise.<SideEffects>}
+     * A new, initializing {@link SideEffects} instance.
      */
-    static create(context, pathResolver) {
-        return new SideEffects(context).init(pathResolver);
+    static create(rootContext, options, pathResolver, debugRoot) {
+        return new SideEffects(rootContext, options).init(pathResolver, debugRoot);
     }
 
     /**
@@ -42,14 +50,16 @@ class SideEffects {
      * {@link SideEffects.create} to generate a fully initialized instance
      * instead.
      * 
-     * @param {Context} context The context object.
+     * @param {string} rootContext
+     * The root-context path.
+     * @param {LoaderOptions} options
+     * The loader options.
      */
-    constructor(context) {
-        const { ignoreSideEffects } = context.options;
-        this.context = context;
+    constructor(rootContext, {ignoreSideEffects}) {
         this.didInit = false;
         this.enabled = ignoreSideEffects !== true;
-        this.rootPath = context.loader.rootContext;
+        this.rootContext = rootContext;
+        this.ignoreList = Array.isArray(ignoreSideEffects) ? ignoreSideEffects : [];
 
         // the ignore list will be split into two;
         // the `init` method handles the setup of the ignore lists
@@ -61,14 +71,18 @@ class SideEffects {
      * Initializes the ignore lists for this instance.
      * 
      * @async
-     * @param {PathResolver} pathResolver The path-resolver.
-     * @returns {SideEffects} This instance.
+     * @param {PathResolver} pathResolver
+     * The path-resolver to use when resolving a file's path.
+     * @param {Debug} debugRoot
+     * The root debug instance.
+     * @returns {SideEffects}
+     * This instance.
      */
-    async init(pathResolver) {
+    async init(pathResolver, debugRoot) {
         if (this.didInit) return this;
-        const { ignoreSideEffects } = this.context.options;
-        const debug = this.context.debug.extend('side-effects');
-        const haveIgnores = Array.isArray(ignoreSideEffects);
+
+        const debug = debugRoot.extend('side-effects');
+        const haveIgnores = this.ignoreList.length > 0;
 
         if (haveIgnores) {
             const { isInPath, checkPath, pathTypes: { dir: $dir } } = utils;
@@ -77,8 +91,8 @@ class SideEffects {
             /** @type {function(string): Promise.<IgnoreResult>} */
             const testPackage = async (str) => {
                 const relPath = ospath.join('./node_modules', str);
-                const modulePath = ospath.resolve(this.rootPath, relPath);
-                const packagesPath = ospath.resolve(this.rootPath, './node_modules');
+                const modulePath = ospath.resolve(this.rootContext, relPath);
+                const packagesPath = ospath.resolve(this.rootContext, './node_modules');
 
                 if (!isInPath(modulePath, packagesPath)) return null;
                 if (await checkPath(modulePath) !== $dir) return null;
@@ -87,9 +101,11 @@ class SideEffects {
 
             // eslint-disable-next-line jsdoc/require-param
             /** @type {function(string): Promise.<IgnoreResult>} */
-            const testModule = async (str) => {
-                const resolved = await pathResolver.resolvePath(str, this.rootPath);
-                return resolved ? { pattern: false, val: resolved } : null;
+            const testModule = (str) => {
+                return pathResolver.resolve(str, this.rootContext).then(
+                    (resolved) => ({ pattern: false, val: resolved.resolvedPath }),
+                    () => null
+                );
             };
 
             // eslint-disable-next-line jsdoc/require-param
@@ -100,12 +116,12 @@ class SideEffects {
                     if (tested) return tested;
                 }
                 return { pattern: true, val: str };
-            }
+            };
 
             try {
                 const modules = [];
                 const patterns = [];
-                const results = await Promise.all(ignoreSideEffects.map(mapFn));
+                const results = await Promise.all(this.ignoreList.map(mapFn));
 
                 for (const result of results)
                     (result.pattern ? patterns : modules).push(result.val);
@@ -131,25 +147,23 @@ class SideEffects {
     }
 
     /**
-     * Determines whether the given module has side-effects.
+     * Determines whether a module should be treated as having side-effects.
      * 
-     * @param {LoadedModule} loadedModule The loaded module.
+     * @param {string} modulePath
+     * The absolute path of the module.
+     * @param {boolean} hasSideEffects
+     * Whether Webpack reports that the module has side-effects.
      * @returns {boolean}
-     * @throws When this {@link SideEffects} instance has not yet been initialized.
-     * @throws When the `loadedModule` argument was nullish.
+     * If `true`, the module should be treated as having side-effects.
+     * @throws {Error}
+     * When this {@link SideEffects} instance has not yet been initialized.
      */
-    test(loadedModule) {
+    test(modulePath, hasSideEffects) {
         this.assertInit();
-
-        if (loadedModule == null)
-            throw new Error('cannot detect side-effects, the `loadedModule` was nullish');
-        
-        // decompose the path to remove webpack loaders, etc.
-        const modulePath = PathResolver.decompose(loadedModule.path).path;
 
         if (!this.enabled) return false;
         if (this.isIgnored(modulePath)) return false;
-        return this.hasSideEffects(loadedModule.instance);
+        return hasSideEffects;
     }
 
     /**
@@ -165,20 +179,8 @@ class SideEffects {
             return true;
 
         // check if it matches an ignored pattern
-        const projectRelative = fixPath(ospath.relative(this.rootPath, modulePath));
+        const projectRelative = fixPath(ospath.relative(this.rootContext, modulePath));
         return isMatch(projectRelative, this.ignoredPatterns);
-    }
-
-    /**
-     * Determines whether the given module has side-effects.
-     * 
-     * @private
-     * @param {WebpackModule} instance The module instance to test.
-     * @returns {boolean}
-     */
-    hasSideEffects(instance) {
-        if (!instance.factoryMeta) return false;
-        return !instance.factoryMeta.sideEffectFree;
     }
 
     /**

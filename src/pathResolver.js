@@ -1,15 +1,65 @@
 const ospath = require('path');
+const utils = require('./utils');
 
-const rePath = /^(.*!)?(.*?)(\?.*)?$/;
-
-/** @typedef {import('./index').Context} Context */
+/** @typedef {import('./index').LoaderContext} LoaderContext */
+/** @typedef {import('./index').Debug} Debug */
 
 /**
- * @typedef DecomposedRequest
- * @prop {?string} loaders The loader portion of a request.
- * @prop {string} path The module path portion of a request.
- * @prop {?string} query The query portion of a request.
+ * A class containing information about a resolved path.
  */
+class ResolvedPath {
+
+    /**
+     * Creates an instance of {@link ResolvedPath}.
+     * 
+     * @param {string} originalPath
+     * The original path to this resource, as it was provided.
+     * @param {string} resolvedPath
+     * The resolved, absolute path to this resource.
+     * @param {string} loaders
+     * The loader portion of the path extracted from the original path string.
+     * @param {string} query
+     * The query portion of the path extracted from the original path string.
+     */
+    constructor(originalPath, resolvedPath, loaders, query) {
+        /** The original path to this resource, as it was provided. */
+        this.originalPath = originalPath;
+
+        /** The resolved, absolute path to this resource. */
+        this.resolvedPath = resolvedPath;
+
+        /** The context directory of this resource. */
+        this.context = ospath.dirname(resolvedPath);
+
+        /** The loader portion of the path extracted from the original path string. */
+        this.loaders = loaders;
+
+        /** The query portion of the path extracted from the original path string. */
+        this.query = query;
+
+        /** The original Webpack path, including loaders and query. */
+        this.original = [loaders, originalPath, query].filter(Boolean).join('');
+
+        /** The resolved Webpack path, including loaders and query. */
+        this.resolved = [loaders, resolvedPath, query].filter(Boolean).join('');
+    }
+
+    /**
+     * Creates a full Webpack path from this instance.
+     *
+     * @param {string} [context]
+     * A context directory to which to make the path relative to.
+     * @returns {string}
+     * The full Webpack path.
+     */
+    toString(context) {
+        if (!context) return this.resolved;
+
+        const { resolvedPath, loaders, query } = this;
+        const path = utils.appendCurPath(ospath.relative(context, resolvedPath));
+        return [loaders, path, query].filter(Boolean).join('');
+    }
+}
 
 /**
  * Resolves the absolute path to a file using Webpack's resolver.
@@ -17,87 +67,60 @@ const rePath = /^(.*!)?(.*?)(\?.*)?$/;
 class PathResolver {
 
     /**
-     * Decomposes a request path into its Webpack loaders, module path, and query.
-     * 
-     * @static
-     * @param {string} request The request to decompose.
-     * @returns {DecomposedRequest} The decomposed request.
-     */
-    static decompose(request) {
-        const decomposedPath = rePath.exec(request);
-
-        if (!decomposedPath)
-            return { loaders: null, path: request, query: null };
-
-        const [, loaders, path, query] = decomposedPath;
-        return { loaders, path, query };
-    }
-
-    /**
-     * Recomposes a {@link DecomposedRequest} back into a proper Webpack path.
-     * 
-     * @static
-     * @param {DecomposedRequest} decomposed The decomposed Webpack path object.
-     * @returns {string} The recomposed request path.
-     */
-    static recompose(decomposed) {
-        if (!decomposed) return null;
-        const { loaders, path, query } = decomposed;
-        return [loaders, path, query].filter(Boolean).join('');
-    }
-
-    /**
      * Initializes a new instance of {@link PathResolver}.
      * 
-     * @param {Context} context The path resolver function to use.
+     * @param {LoaderContext} loader
+     * The loader context.
      */
-    constructor(context) {
-        this.cache = context.cache.path;
+    constructor(loader) {
+        /** @type {Map.<string, Promise.<string>} */
+        this.cache = new Map();
+
+        /**
+         * @function
+         * @param {string} request
+         * @param {string} issuer
+         * @returns {Promise.<string>}
+         */
         this.resolvePathFn = (request, issuer) => {
-            return new Promise(ok => {
-                const dir = ospath.dirname(issuer);
-                context.loader.resolve(dir, request, (err, path) => {
-                    ok(err ? null : path);
-                });
+            return new Promise((ok, fail) => {
+                const context = ospath.dirname(issuer);
+                loader.resolve(context, request,
+                    (err, path) => err ? fail(err) : ok(path)
+                );
             });
         };
     }
 
     /**
-     * Resolves a Webpack request to an absolute path.  Any Webpack-specific
-     * information attachments, loaders and queries, will be preserved.
+     * Resolves a Webpack request and returns an object containing information
+     * about the path.
      * 
      * @async
-     * @param {string} request The relative path of the requested module.
-     * @param {string} issuer The absolute path to the issuer of the request.
-     * @returns {?string} The absolute path of the request or `null` if the
-     * path could not be resolved correctly.
+     * @param {string} request
+     * The relative path of the requested module.
+     * @param {string} issuer
+     * The absolute path to the issuer of the request.
+     * @param {Debug} [debug]
+     * The debug instance to log to in the case of an error.
+     * @returns {ResolvedPath}
+     * An object that has information about the resolved path.
+     * @throws {Error}
+     * When the path could not be resolved.
      */
-    async resolve(request, issuer) {
-        // the issuer cannot have loaders attached to it
-        issuer = PathResolver.decompose(issuer).path;
+    async resolve(request, issuer, debug) {
+        try {
+            // the issuer cannot have loaders attached to it
+            const [issuerPath] = utils.decomposePath(issuer);
 
-        const decomposed = PathResolver.decompose(request);
-        const resolvedPath = await this.resolveImpl(decomposed.path, issuer);
-        return this.integrate(resolvedPath, decomposed);
-    }
-
-    /**
-     * Resolves a Webpack request to an absolute path.  Any Webpack-specific
-     * information attachments, loaders and queries, will be discarded.
-     * 
-     * @async
-     * @param {string} request The relative path of the requested module.
-     * @param {string} issuer The absolute path to the issuer of the request.
-     * @returns {?string} The absolute path of the request or `null` if the
-     * path could not be resolved correctly.
-     */
-    async resolvePath(request, issuer) {
-        // the issuer cannot have loaders attached to it
-        issuer = PathResolver.decompose(issuer).path;
-
-        const decomposed = PathResolver.decompose(request);
-        return await this.resolveImpl(decomposed.path, issuer);
+            const [requestPath, loaders, query] = utils.decomposePath(request);
+            const resolvedPath = await this.resolveImpl(requestPath, issuerPath);
+            return new ResolvedPath(requestPath, resolvedPath, loaders, query);
+        }
+        catch (error) {
+            if (debug) debug('PATH RESOLVE ERROR', error);
+            throw error;
+        }
     }
 
     /**
@@ -105,37 +128,27 @@ class PathResolver {
      * 
      * @private
      * @async
-     * @param {string} request The request path, without loaders or query parameters.
-     * @param {string} issuer The issuer of the request, without loaders or query parameters.
-     * @returns {?string} The absolute path of the request or `null` if the
-     * path could not be resolved correctly.
+     * @param {string} request
+     * The request path, without loaders or query parameters.
+     * @param {string} issuer
+     * The issuer of the request, without loaders or query parameters.
+     * @returns {string}
+     * The absolute path of the request.
+     * @throws {Error}
+     * When the path could not be resolved.
      */
     async resolveImpl(request, issuer) {
-        const cacheKey = request + issuer;
-        let resolvedPath = this.cache.get(cacheKey);
+        const cacheKey = `${issuer} => ${request}`;
+        let resolvingPath = this.cache.get(cacheKey);
 
-        if (typeof resolvedPath === 'undefined') {
-            resolvedPath = await this.resolvePathFn(request, issuer);
-            this.cache.set(cacheKey, resolvedPath);
+        if (typeof resolvingPath === 'undefined') {
+            resolvingPath = this.resolvePathFn(request, issuer);
+            this.cache.set(cacheKey, resolvingPath);
         }
 
-        return resolvedPath;
-    }
-
-    /**
-     * Integrates the resolved path and a {@link DecomposedRequest} back into
-     * a string.  This is just a helper for cleaner code.
-     * 
-     * @private
-     * @param {string} resolvedPath The absolute path to the requested module.
-     * @param {DecomposedRequest} decomposed The decomposed Webpack path.
-     * @returns {?string} The reintegrated request path.
-     */
-    integrate(resolvedPath, decomposed) {
-        if (!resolvedPath) return null;
-        decomposed.path = resolvedPath;
-        return PathResolver.recompose(decomposed);
+        return await resolvingPath;
     }
 }
 
 module.exports = PathResolver;
+module.exports.ResolvedPath = ResolvedPath;

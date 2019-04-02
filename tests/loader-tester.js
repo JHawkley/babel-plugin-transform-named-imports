@@ -118,25 +118,23 @@ const createWebpackConfig = (options) => {
         },
         module: { rules },
         optimization: {
+            minimize: false,
             concatenateModules: false,
             usedExports: false
         }
     };
 
     if (webpackConfig != null) {
-        if (typeof webpackConfig !== 'function') {
+        if (typeof webpackConfig !== 'function')
             throw new Error('the `webpackConfig` property must be a function, when provided');
-        }
 
         const newConfig = webpackConfig(config, options);
 
-        if (newConfig == null || typeof newConfig !== 'object') {
+        if (newConfig == null || typeof newConfig !== 'object')
             throw new Error('the `webpackConfig` property must return a Webpack configuration object');
-        }
 
-        if (Array.isArray(newConfig)) {
+        if (Array.isArray(newConfig))
             throw new Error('the `webpackConfig` property must return only a single Webpack configuration object');
-        }
 
         config = newConfig;
     }
@@ -286,13 +284,11 @@ let testBlockCount = 1;
  * The options describing the tests to run.  May be an array of options.
  */
 module.exports = (options) => {
-    if (!Array.isArray(options)) {
+    if (!Array.isArray(options))
         options = [options].filter(Boolean);
-    }
 
-    if (options.length === 0) {
+    if (options.length === 0)
         throw new Error('at least one test options object must be provided');
-    }
 
     for (const testOptions of options) {
         const description = testOptions.describe || `test block ${testBlockCount}`;

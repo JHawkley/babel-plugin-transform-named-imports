@@ -1,39 +1,91 @@
 const debugFn = require('debug');
-const debugRoot = debugFn(require('./constants').loaderName);
+const debugBase = debugFn(require('./constants').loaderName);
 const loaderUtils = require('loader-utils');
+const babel = require('@babel/core');
 
 const core = require('./core');
 const utils = require('./utils');
 const validateOptions = require('./options').validate;
-const babel = require('@babel/core');
-const { createBabelPlugin, parseAst } = require('./babel');
+const { createBabelPlugin } = require('./babel');
+const PathResolver = require('./pathResolver');
+const SpecResolver = require('./specResolver');
 
 const setupState = core.setupState;
-const toTransformsMap = core.toTransformsMap;
+const addImportTransforms = core.addImportTransforms;
 
 /** @typedef {import('./options').LoaderOptions} LoaderOptions */
 /** @typedef {import('./specResolver').SpecifierResult} SpecifierResult */
 /** @typedef {import('./specResolver').LoadedModule} LoadedModule */
+/** @typedef {import('./babel').BabelAST} BabelAST */
 /** @typedef {import('./babel').ImportNode} ImportNode */
+/** @typedef {import('./babel').AllTransformsMap} AllTransformsMap */
+/** @typedef SourceMap */
 
 /**
- * @template A,B
- * @typedef {Array.<(A|B)>} Tuple
+ * @callback DebugFunction
+ * @param {...*} args
+ * The arguments to log.  When the first argument is a string, any
+ * other arguments can be integrated into the string through
+ * `printf` style formatters.
  */
 
 /**
- * @typedef Cache
- * @prop {Map.<string, Promise.<LoadedModule>>} module The module cache.
- * @prop {Map.<string, SpecifierResult>} specifier The specifier cache.
- * @prop {Map.<string, string>} path The path cache.
+ * @typedef DebugProps
+ * @prop {boolean} enabled
+ * Whether the debug instance is enabled.
+ * @prop {function(string): Debug} extend
+ * Extends the debug function with a new namespace.
+ */
+
+/** @typedef {DebugFunction & DebugProps} Debug */
+
+/**
+ * @typedef WebpackModule
+ * @prop {Object} [factoryMeta]
+ * @prop {boolean} factoryMeta.sideEffectFree
+ */
+
+/**
+ * @typedef LoaderContext
+ * @prop {string} request
+ * @prop {string} resource
+ * @prop {string} resourcePath
+ * @prop {string} rootContext
+ * @prop {WebpackModule} _module
+ * @prop {function(): void} [cacheable]
+ * @prop {function(): function(Error, string, SourceMap, *): void} async
+ * @prop {function(string, function(Error, string, SourceMap, WebpackModule): void): void} loadModule
+ * @prop {function(string, string, function(Error, string): void): void} resolve
+ * @prop {function(Error): void} emitWarning
+ * @prop {function(Error): void} emitError
  */
 
 /** 
- * @typedef Context
- * @prop {Object} loader The Webpack loader context.
- * @prop {LoaderOptions} options The options for this loader.
- * @prop {Cache} cache The caches for the loader.
- * @prop {Function} debug The debug handle for the current loader.
+ * @typedef SharedContext
+ * @prop {string} ident
+ * The `ident` the context was created for.
+ * @prop {PathResolver} pathResolver
+ * The shared path resolver instance.
+ * @prop {SpecResolver} specResolver
+ * The shared specifier resolver instance.
+ * @prop {Debug} debugRoot
+ * The debug handle for the current loader instance.
+ */
+
+/**
+ * @typedef OwnContext
+ * @prop {string} request
+ * The restored request path.
+ * @prop {LoaderOptions} options
+ * The options for the current loader instance.
+ * @prop {LoaderContext} loader
+ * The context object of the current loader instance.
+ * @prop {Debug} debugLoader
+ * The debug handle for the current loader instance.
+ */
+
+/**
+ * @typedef {SharedContext & OwnContext} Context
  */
 
 /** A custom debug formatter for arrays. */
@@ -42,74 +94,99 @@ debugFn.formatters.A = (() => {
     return function(v) {
         if (!Array.isArray(v)) return debugFn.formatters.O(v);
         if (v.length === 0) return '[]';
+
         this.inspectOpts.colors = this.useColors;
         v = v.map(el => `    ${util.inspect(el, this.inspectOpts).replace(/\n/g, '\n     ')},`);
         return [].concat('[', ...v, ']').join('\n');
     };
 })();
 
-/** @type {Map.<string, Cache} */
-const globalCache = new Map();
+/** @type {WeakMap.<*, SharedContext} */
+const contexts = new WeakMap();
 
-/**
- * Creates a function that performs clean-up for the loader.
- *
- * @param {Function} callback The loader's callback.
- * @param {(string|false)} cacheKey The cache key or `false` if the cache
- * shouldn't be cleaned up.
- * @returns {function(?Error, Array)}
- */
-const finalize = (callback, cacheKey) => (err, result) => {
-    if (cacheKey) globalCache.delete(cacheKey);
-    callback(err, ...result);
+// some debug infrastructure for determining progress
+
+const debugPending = debugBase.extend('pending');
+let timeoutHandle = null;
+let pendingResources = [];
+
+const registerLoader = (request) => {
+    if (!debugPending.enabled) return;
+    pendingResources.push(request);
+};
+
+const unregisterLoader = (request) => {
+    if (!debugPending.enabled) return;
+    for (let i = pendingResources.length - 1; i >= 0; i -= 1)
+        if (pendingResources[i] === request)
+            return pendingResources[i] = null;
+};
+
+const reportPendingLoaders = () => {
+    timeoutHandle = null;
+    pendingResources = pendingResources.filter(Boolean);
+
+    if (contexts.size === 0 || pendingResources.length === 0)
+        debugPending('NOTHING PENDING');
+    else
+        debugPending('AWAITING %A', pendingResources);
+};
+
+const startReportPendingLoaders = () => {
+    if (!debugPending.enabled) return;
+    if (timeoutHandle) clearTimeout(timeoutHandle);
+    timeoutHandle = setTimeout(reportPendingLoaders, 10000);
 };
 
 /**
- * @async
- * @param {Object} webpack
- * @param {string} source
- * @param {Object} sourceMap
- * @param {LoaderOptions} options
- * @param {Cache} cache
- * @returns {Tuple<string, Object>}
+ * Restores the request string of a loaded resource.
+ * Webpack adds a lot of non-relevant information to the `resource` property
+ * of the loader context when it is created through `loadModule`.  This
+ * information needs to be discarded and the original request path
+ * reintegrated.
+ * 
+ * @param {string} resourcePath
+ * The resource path, from the loader.
+ * @param {WebpackModule} instance
+ * The Webpack module instance.
+ * @returns {string}
+ * The regenerated request path.
  */
-const transform = async (webpack, source, sourceMap, options, cache) => {
-    let result;
-    const { resource, resourcePath } = webpack;
-    const debug = debugRoot.extend(`${options.ident}:${cache.module.size}`);
-    const contextRelative = utils.contextRelative(webpack.rootContext);
+const restoreRequest = (resourcePath, instance) => {
+    if (!resourcePath || !instance.rawRequest) return null;
 
-    debug(`START`, contextRelative(resource));
+    const [, loaders, query] = utils.decomposePath(instance.rawRequest);
+    return [loaders, resourcePath, query].filter(Boolean).join('');
+};
 
-    const ast = await parseAst(resourcePath, source, options.babelConfig);
+/**
+ * Performs the work necessary to generate the transformed source code.
+ * 
+ * @async
+ * @param {string} source
+ * The source code of the module.
+ * @param {?SourceMap} sourceMap
+ * The source-map of the module.
+ * @param {Context} context
+ * The working context.
+ * @returns {[string, SourceMap]}
+ * A tuple of the output source code and source-map.
+ */
+const transform = async (source, sourceMap, context) => {
+    const { request, loader, specResolver } = context;
+    const { resourcePath, _module: instance } = loader;
+    const state = setupState(context);
 
-    /** @type {ImportNode[]} */
-    const importDeclarations = ast.program.body
-        .filter(babel.types.isImportDeclaration);
-    
-    if (importDeclarations.length === 0) {
-        result = [source, sourceMap];
-    }
-    else {
-        cache.module.set(resource, Promise.resolve({
-            source, ast,
-            path: resource,
-            instance: webpack._module
-        }));
+    const loadedModule = { request, resourcePath, source, instance };
 
-        const state = setupState({ loader: webpack, options, cache, debug });
-        const allTransformsMap = new Map();
-        const kvps = await Promise.all(importDeclarations.map(toTransformsMap(state)));
-        
-        kvps.filter(Boolean).forEach(([path, dataKvps]) => {
-            let transformData = allTransformsMap.get(path);
-            if (!transformData) {
-                transformData = new Map();
-                allTransformsMap.set(path, transformData);
-            }
-            dataKvps.forEach(([name, data]) => transformData.set(name, data));
-        });
+    const registered = await specResolver.registerModule(state, loadedModule);
+    if (!registered) return [source, sourceMap];
 
+    const { ast, specifiers: { importSpecifiers } } = registered;
+    if (importSpecifiers.length === 0) return [source, sourceMap];
+
+    try {
+        const allTransformsMap = await addImportTransforms(state, importSpecifiers, new Map());
         const babelPlugin = createBabelPlugin(allTransformsMap);
 
         const { code, map } = await babel.transformFromAstAsync(ast, source, {
@@ -119,41 +196,84 @@ const transform = async (webpack, source, sourceMap, options, cache) => {
             plugins: [babelPlugin]
         });
 
-        cache.module.delete(resource);
-
-        result = [code, map];
+        return [code, map];
     }
+    catch (error) {
+        if (Object.is(error, core.abortSignal)) {
+            // abort signal was thrown; just stop without
+            // performing any transformations
+            return [source, sourceMap];
+        }
 
-    debug(`DONE`, contextRelative(resource));
-    return result;
+        throw error;
+    }
 };
 
-function transformImportsLoader(source, sourceMap) {
+/**
+ * @this {LoaderContext}
+ * @param {string} source
+ * The source code of the module.
+ * @param {SourceMap} sourceMap
+ * The source-map of the module.
+ * @param {*} meta
+ * The current loader meta-data.
+ */
+function transformImportsLoader(source, sourceMap, meta) {
+    const { resourcePath, rootContext, _module: instance } = this;
+    const request = restoreRequest(resourcePath, instance);
+
     if (this.cacheable) this.cacheable();
 
-    const options = validateOptions(loaderUtils.getOptions(this));
-    const cacheKey = options.ident;
-
-    let localCache = globalCache.get(cacheKey);
-    let builtCache = false;
-
-    if (!localCache) {
-        builtCache = true;
-
-        localCache = {
-            module: new Map(),
-            specifier: new Map(),
-            path: new Map()
-        };
-
-        globalCache.set(cacheKey, localCache);
+    if (!request || !rootContext) {
+        const inspection = require('util').inspect(this, { depth: 2, getters: true });
+        debugBase('NO PATH AVAILABLE', inspection);
+        return this.callback(null, source, sourceMap, meta);
     }
 
-    const callback = finalize(this.async(), builtCache && cacheKey);
+    const options = validateOptions(loaderUtils.getOptions(this));
+    const loaderIdent = options.ident;
 
-    transform(this, source, sourceMap, options, localCache).then(
-        (result) => callback(null, result),
-        (err) => callback(err, [])
+    let sharedContext = contexts.get(this._compilation);
+    if (!sharedContext) {
+        const debugRoot = debugBase.extend(loaderIdent);
+        debugRoot('BUILDING SHARED CONTEXT');
+
+        const pathResolver = new PathResolver(this);
+        const specResolver = new SpecResolver(this, options, pathResolver, debugRoot);
+
+        sharedContext = {
+            debugRoot, pathResolver, specResolver,
+            ident: loaderIdent
+        };
+
+        contexts.set(this._compilation, sharedContext);
+    }
+
+    const callback = this.async();
+    const moduleIdent = utils.contextRelative(rootContext, request);
+    const debugLoader = sharedContext.debugRoot.extend(moduleIdent);
+
+    /** @type {Context} */
+    const context = Object.assign({}, sharedContext, {
+        request, options, debugLoader,
+        loader: this
+    });
+
+    startReportPendingLoaders();
+    registerLoader(request);
+    debugLoader('START');
+
+    transform(source, sourceMap, context).then(
+        ([code, map]) => {
+            debugLoader('DONE');
+            unregisterLoader(request);
+            callback(null, code, map, meta);
+        },
+        (err) => {
+            debugLoader('FAILED', err);
+            unregisterLoader(request);
+            callback(err);
+        }
     );
     
     return void 0;

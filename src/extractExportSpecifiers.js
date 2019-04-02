@@ -5,32 +5,45 @@ const types = require('@babel/core').types;
 /** @typedef {import('./babel').ExportSpecifierNode} ExportSpecifierNode */
 /** @typedef {import('./babel').ExportDefaultNode} ExportDefaultNode */
 /** @typedef {import('./babel').ExportNamedNode} ExportNamedNode */
+/** @typedef {import('./babel').ExportNode} ExportNode */
+/** @typedef {import('./pathResolver').ResolvedPath} ResolvedPath */
 
-/** @typedef {function(string): Promise.<?string>} ResolveFn */
-/** @typedef {(ExportDefaultNode|ExportNamedNode)} ExportNode */
+/**
+ * @callback ResolveFn
+ * @param {string} resolve
+ * @returns {Promise.<ResolvedPath>}
+ */
 
 /**
 * @typedef ExportSpecifier
 * @prop {string} name The local name of the exported value.
 * @prop {string} exportedName The name that the value was exported under.
 * @prop {string} searchName The name to search for when locating related imports.
-* @prop {?string} path The absolute path of the imported module.
-* @prop {?string} originalPath The original path that was used to import the module.
+* @prop {?ResolvedPath} path The resolved path of the imported module.
 * @prop {('default'|'namespace'|'named')} type The simple type.
 */
 
-/** @type {function(): string} */
+/**
+ * A custom inspector for debugging.
+ * 
+ * @function
+ * @this {ExportSpecifier}
+ * @returns {string}
+ */
 function customInspect() {
-    const { name, type, exportedName: exp, searchName: search, originalPath: path } = this;
-    const asName = exp === name ? name : `${exp} as ${name}`;
+    const { name, type, exportedName: exp, searchName: search, path } = this;
+    const asName = exp === name ? name : `${name} as ${exp}`;
     return [
         `${type} export { ${asName} } via ${search}`,
-        path && `from "${path}"`
+        path && `from "${path.original}"`
     ].filter(Boolean).join(' ');
 }
 
-// eslint-disable-next-line jsdoc/require-param
-/** @type {function(ExportSpecifierNode): ('default'|'namespace'|'named')} */
+/**
+ * @function
+ * @param {ExportSpecifierNode} node
+ * @returns {('default'|'namespace'|'named')}
+ */
 const getSimpleType = (node) => {
     const { local } = node;
 
@@ -41,8 +54,11 @@ const getSimpleType = (node) => {
     return $.unknown;
 };
 
-// eslint-disable-next-line jsdoc/require-param
-/** @type {function(ExportDefaultNode): ?ExportSpecifier} */
+/**
+ * @function
+ * @param {ExportDefaultNode} node
+ * @returns {?ExportSpecifier}
+ */
 const handleDefaultExport = (node) => {
     // only try to follow if the declaration is an identifier;
     // any other kind of declaration will stop searching at the last
@@ -56,18 +72,21 @@ const handleDefaultExport = (node) => {
         exportedName: $.default,
         searchName: localName,
         path: null,
-        originalPath: null,
         type: $.default,
         [util.inspect.custom]: customInspect
     };
 };
 
-// eslint-disable-next-line jsdoc/require-param
-/** @async @type {function(ExportNamedNode, ResolveFn): Array.<?ExportSpecifier>} */
+/**
+ * @function
+ * @async
+ * @param {ExportNamedNode} node
+ * @param {ResolveFn} resolve
+ * @returns {Array.<?ExportSpecifier>}
+ */
 const handleOtherExport = async (node, resolve) => {
     const specifiers = node.specifiers || [];
-    const originalPath = node.source ? node.source.value : null;
-    const importPath = originalPath && await resolve(originalPath);
+    const resolvedPath = node.source && await resolve(node.source.value);
 
     return specifiers.map((specifier) => {
         const type = getSimpleType(specifier);
@@ -83,8 +102,7 @@ const handleOtherExport = async (node, resolve) => {
             name: localName,
             exportedName: exportedName,
             searchName: localName,
-            path: importPath,
-            originalPath: originalPath,
+            path: resolvedPath || null,
             type: type,
             [util.inspect.custom]: customInspect
         };
@@ -95,9 +113,10 @@ const handleOtherExport = async (node, resolve) => {
  * Given an array of export declarations, produces an array of export specifiers.
  * 
  * @async
- * @param {ExportNode[]} declarations The declarations extract specifiers from.
- * @param {ResolveFn} resolve A function that resolves a relative path to
- * an absolute path.
+ * @param {ExportNode[]} declarations
+ * The declarations extract specifiers from.
+ * @param {ResolveFn} resolve
+ * A function that resolves a relative path to an absolute path.
  * @returns {ExportSpecifier[]}
  */
 module.exports = async (declarations, resolve) => {
@@ -107,6 +126,7 @@ module.exports = async (declarations, resolve) => {
             : handleOtherExport(node, resolve);
     });
 
-    const exps = await Promise.all(promisedExps);
-    return [].concat(...exps).filter(Boolean);
+    return Array.prototype.concat
+        .apply([], await Promise.all(promisedExps))
+        .filter(Boolean);
 };

@@ -4,6 +4,7 @@ const $ = require('./constants');
 
 const types = babel.types;
 
+/** @typedef {import('./index').Debug} Debug */
 /** @typedef BabelAST A Babel-compatible AST. */
 
 /**
@@ -45,6 +46,11 @@ const types = babel.types;
  * @prop {Object} [source] The source path container.
  * @prop {string} source.value The source path.
  * @prop {ExportSpecifierNode[]} specifiers The node's specifiers.
+ */
+
+/**
+ * A Babel export node.
+ * @typedef {(ExportDefaultNode|ExportNamedNode)} ExportNode
  */
 
 /**
@@ -185,7 +191,7 @@ const resolveConfig = (path, config) => {
  * @param {string} path The path of the file being parsed.
  * @param {string} source The source code of the file.
  * @param {(string|Object)} [baseConfig] The Babel options to use as a base.
- * @returns {?BabelAST} A Babel AST.
+ * @returns {BabelAST} A Babel AST.
  */
 const parseAst = async (path, source, baseConfig) => {
     const config = Object.assign({}, resolveConfig(path, baseConfig), {
@@ -194,7 +200,7 @@ const parseAst = async (path, source, baseConfig) => {
             supportsStaticESM: true
         },
         filename: path,
-        sourceType: 'module'
+        sourceType: 'unambiguous'
     });
 
     return await babel.parseAsync(source, config);

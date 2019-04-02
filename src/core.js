@@ -2,21 +2,31 @@ const ospath = require('path');
 
 const $ = require('./constants');
 const NullImportSpecifierError = require('./errors').NullImportSpecifierError;
-const SpecResolver = require('./specResolver');
-const PathResolver = require('./pathResolver');
-const SideEffects = require('./sideEffects');
-const extractImportSpecifiers = require('./extractImportSpecifiers');
 const utils = require('./utils');
 
+/** @typedef {import('./index').Debug} Debug */
 /** @typedef {import('./index').Context} Context */
+/** @typedef {import('./index').LoaderContext} LoaderContext */
+/** @typedef {import('./utils').KVP} KVP */
 /** @typedef {import('./babel').ImportNode} ImportNode */
 /** @typedef {import('./babel').TransformData} TransformData */
 /** @typedef {import('./babel').TransformsMap} TransformsMap */
+/** @typedef {import('./babel').AllTransformsMap} AllTransformsMap */
+/** @typedef {import('./pathResolver')} PathResolver */
+/** @typedef {import('./specResolver')} SpecResolver */
+/** @typedef {import('./specResolver').LoadedModule} LoadedModule */
 /** @typedef {import('./extractImportSpecifiers').ImportSpecifier} ImportSpecifier */
 /** @typedef {import('./extractExportSpecifiers').ExportSpecifier} ExportSpecifier */
 
-/** @typedef {[string, TransformData]} TransformDataKvp */
-/** @typedef {[string, TransformDataKvp[]]} TransformsMapKvp */
+/** @typedef {[string, string, TransformData]} TransformDataEntry */
+
+/**
+ * @typedef ExportedSpecifierResult
+ * @prop {ImportSpecifier} impSpecifier
+ * The original import specifier.
+ * @prop {Specifier} expSpecifier
+ * The resolved specifier.
+ */
 
 /**
  * Either kind of specifier.
@@ -26,17 +36,32 @@ const utils = require('./utils');
 /**
  * The state for this loader's work.
  * @typedef State
- * @prop {Object} loader The Webpack loader context.
- * @prop {PathResolver} pathResolver The path-resolver.
- * @prop {SpecResolver} specResolver The specifier-resolver.
- * @prop {SideEffects} sideEffects The side-effect checker.
- * @prop {string} sourcePath The path to the file being transformed by the plugin.
- * @prop {boolean} doDefaults Whether to transform default imports and exports.
- * @prop {function(Specifier): string} makeImportPath A function that will convert a
- * specifier into a module-relative import path.
- * @prop {function(string): string} makeContextPath A function that will convert a
- * specifier into a root-context relative path.
- * @prop {Function} debug The debug handle for this state.
+ * @prop {LoaderContext} loader
+ * The Webpack loader context.
+ * @prop {function(string): Promise.<?LoadedModule>} loadModule
+ * Loads a module.
+ * @prop {PathResolver} pathResolver
+ * The path-resolver.
+ * @prop {SpecResolver} specResolver
+ * The specifier-resolver.
+ * @prop {string} request
+ * The resolved request of the module.  Includes the original inline-loaders
+ * and query parameters used in the request, but only the module path is an
+ * absolute path, and should be equal to `sourcePath`.
+ * @prop {string} sourcePath
+ * The path to the file being transformed by the plugin.
+ * @prop {string} rootContext
+ * The root-context path.
+ * @prop {boolean} syncMode
+ * Whether to execute the loader's work in a synchronous way.
+ * @prop {boolean} doDefaults
+ * Whether to transform default imports and exports.
+ * @prop {Debug} debug
+ * The debug handle for this state.
+ * @prop {Debug} debugPath
+ * The debug handle for the path-resolver.
+ * @prop {Debug} debugSpec
+ * The debug handle for the spec-resolver.
  */
 
 /**
@@ -47,100 +72,117 @@ const abortSignal = Symbol('abort');
 /**
  * Called by the `pre` method of the plugin to get the initial state.
  * 
- * @param {Context} context The current Babel plugin-pass object.
- * @returns {State} A new state object.
+ * @param {Context} context
+ * The working context of the loader.
+ * @returns {State}
+ * A new state object.
  */
 const setupState = (context) => {
     // setup configuration only once per file
-    const { loader, options } = context;
+    const { request, loader, options, pathResolver, specResolver } = context;
+    const rootContext = loader.rootContext;
     const sourcePath = loader.resourcePath;
-    const pathResolver = new PathResolver(context);
-    const debug = context.debug.extend('core');
+    const debug = context.debugLoader.extend('core');
 
-    // takes the specifier and builds the path, we prefer
-    // the absolute path to the file, but if we weren't
-    // able to resolve that, stick to the original path
-    const makeImportPath = (specifier) => {
-        if (!specifier) return null;
-        if (!specifier.path) return specifier.originalPath;
-        
-        const decomposed = PathResolver.decompose(specifier.path);
-        decomposed.path = utils.appendCurPath(ospath.relative(
-            ospath.dirname(sourcePath),
-            decomposed.path
-        ));
+    const loadModule = (request) => {
+        const relPath = utils.contextRelative(rootContext, request);
+        debug('LOADING MODULE', relPath);
 
-        return PathResolver.recompose(decomposed);
+        return new Promise((ok, fail) => {
+            loader.loadModule(request, (err, source, map, instance) => {
+                if (err) {
+                    debug(
+                        'MODULE LOAD ERROR %A',
+                        [relPath, err]
+                    );
+                    fail(err);
+                }
+                else if (!instance.type.startsWith('javascript/')) {
+                    debug(
+                        'MODULE LOAD WARNING %A',
+                        [relPath, 'module type was not for a javascript source']
+                    );
+                    ok(null);
+                }
+                else {
+                    const [resourcePath] = utils.decomposePath(request);
+                    ok({ request, resourcePath, source, instance });
+                }
+            });
+        });
     };
-
-    // takes a path and makes it relative to the root-context;
-    // we only care to run it if debugging is enabled, though
-    const makeContextPath
-        = debug.enabled ? utils.contextRelative(loader.rootContext)
-        : () => '(debug disabled)';
 
     return {
         loader,
-        debug,
+        loadModule,
         pathResolver,
+        specResolver,
+        request,
         sourcePath,
-        makeImportPath,
-        makeContextPath,
-        specResolver: new SpecResolver(context, pathResolver),
-        sideEffects: new SideEffects(context, pathResolver),
-        doDefaults: options.transformDefaultImports
+        rootContext,
+        debug,
+        debugSpec: debug.extend('spec-resolver'),
+        debugPath: debug.extend('path-resolver'),
+        doDefaults: options.transformDefaultImports,
+        syncMode: options.syncMode
     };
-}
+};
 
 /**
- * @callback TransformsMapMapper
- * @param {ImportNode} node
- * @returns {Promise.<TransformsMapKvp>}
- */
-
-/**
- * Creates a function that can be used with `Array#map` that converts a
- * Babel `ImportDeclaration` node into a map of transforms to be applied
- * by a plugin created by {@link import('./babel').createBabelPlugin}.
+ * Processes the given `specifiers` and add their {@link TransformData} to
+ * the given `importsMap`.
  * 
- * @param {State} state The current working state.
- * @returns {TransformsMapMapper}
+ * @param {State} state
+ * @param {ImportSpecifiers[]} specifiers
+ * @param {AllTransformsMap} allTransformsMap
+ * @returns {AllTransformsMap}
  */
-const toTransformsMap = (state) => async (node) => {
-    const { sourcePath, doDefaults, pathResolver } = state;
-    const originalPath = node.source.value;
-
-    // get the declaration's import specifiers
-    const specifiers = await extractImportSpecifiers(
-        [node],
-        request => pathResolver.resolve(request, sourcePath)
-    );
+const addImportTransforms = async (state, specifiers, allTransformsMap) => {
+    const { doDefaults, syncMode } = state;
 
     // if there is no work to do, exit immediately
     if (specifiers.length === 0)
-        return null;
+        return allTransformsMap;
 
     // leave single, default imports alone if we're not transforming them
     if (!doDefaults && specifiers.length === 1 && specifiers[0].type === $.default)
-        return null;
+        return allTransformsMap;
 
-    try {
-        const transforms = specifiers
-            .map(toExportedSpecifier(state))
-            .map(toTransformData(state));
+    const forEach = syncMode ? utils.iterating.sync : utils.iterating.async;
+    await forEach(specifiers, addImportsFrom(state, allTransformsMap));
 
-        return [originalPath, await Promise.all(transforms)];
+    return allTransformsMap;
+};
+
+/**
+ * Creates a function that can be used with `Array#map` or one of the
+ * {@link import('./utils').iterating} functions that converts an
+ * {@link ImportSpecifier} into a {@link TransformData} and adds it to the
+ * given {@link AllTransformsMap}.  The map should be applied by a plugin
+ * created by {@link import('./babel').createBabelPlugin}.
+ * 
+ * @currying 2,1
+ * @param {State} state
+ * The current working state.
+ * @param {AllTransformsMap} allTtansformsMap
+ * The map to add the import and their transform data to.
+ * @param {ImportSpecifier} specifier
+ * The specifier of an import declaration.
+ * @returns {Promise.<void>}
+ * A promise that will complete when the function has finished adding
+ * the {@link TransformData} to the map.
+ */
+const addImportsFrom = (state, allTransformsMap) => async (specifier) => {
+    const importedPath = specifier.path.original;
+
+    let transformsMap = allTransformsMap.get(importedPath);
+    if (typeof transformsMap === 'undefined') {
+        transformsMap = new Map();
+        allTransformsMap.set(importedPath, transformsMap);
     }
-    catch (error) {
-        if (Object.is(error, abortSignal)) {
-            // abort signal was thrown; just stop without
-            // emitting any transformations
-            return null;
-        }
 
-        // rethrow any other error
-        throw error;
-    }
+    const specResult = await findExportedSpecifier(state, specifier);
+    addTransformData(state, transformsMap, specResult);
 };
 
 /**
@@ -148,12 +190,15 @@ const toTransformsMap = (state) => async (node) => {
  * Returns `null` if no such specifier could be located.
  * 
  * @async
- * @param {State} state The current working state.
- * @param {Specifier} specifier The specifier to use in the search.
- * @returns {Specifier} The next specifier in the chain or `null` if it wasn't found.
+ * @param {State} state
+ * The current working state.
+ * @param {Specifier} specifier
+ * The specifier to use in the search.
+ * @returns {?Specifier}
+ * The next specifier in the chain or `null` if it wasn't found.
  */
 const findNextSpecifier = async (state, specifier) => {
-    const { debug } = state;
+    const { debug, rootContext, doDefaults, specResolver } = state;
     const { searchName, path, type } = specifier;
 
     // stop at namespaced imports; there's nothing more that we can do without
@@ -164,21 +209,21 @@ const findNextSpecifier = async (state, specifier) => {
     }
 
     // stop at default imports if we're not transforming them
-    if (!state.doDefaults && type === $.default) {
+    if (!doDefaults && type === $.default) {
         debug('HIT DEFAULT IMPORT');
         return null;
     }
 
     // attempt to get the import/export specifiers for the file being imported
-    const fileSpecifiers = await state.specResolver.resolve(path);
+    const fileSpecifiers = await specResolver.resolve(state, path.resolved);
 
-    // if `null`, either the AST failed to parse or the file had side-effects
+    // if `null`, the file failed to parse or had side-effects
     if (!fileSpecifiers) return null;
 
     const { importSpecifiers, exportSpecifiers } = fileSpecifiers;
 
     debug('LOOKING FOR', searchName);
-    debug('SEARCHING FILE', state.makeContextPath(path));
+    debug('SEARCHING FILE', path.toString(rootContext));
     debug('IMPORTS %A', importSpecifiers);
     debug('EXPORTS %A', exportSpecifiers);
 
@@ -202,26 +247,18 @@ const findNextSpecifier = async (state, specifier) => {
 };
 
 /**
- * @typedef ExportedSpecifierResult
- * @prop {ImportSpecifier} impSpecifier The original import specifier.
- * @prop {Specifier} expSpecifier The resolved specifier.
- */
-
-/**
- * @callback ExportedSpecifierMapper
- * @param {ImportSpecifier} impSpecifier The input import specifier.
- * @returns {Promise.<ExportedSpecifierResult>} The result.
- */
-
-/**
- * Creates a function that can be used with `Array#map` that converts an import
- * specifier into a result pair that can be processed by {@link toTransform} to
- * produce a Babel transformation.
+ * Produces a {@link ExportedSpecifierResult} for the given
+ * {@link ImportSpecifier `impSpecifier`}.
  * 
- * @param {State} state The state object of the plugin.
- * @returns {ExportedSpecifierMapper} A function, to be used with `Array#map`.
+ * @async
+ * @param {State} state
+ * The state object of the plugin.
+ * @param {ImportSpecifier} impSpecifier
+ * The input import specifier.
+ * @returns {ExportedSpecifierResult}
+ * The result.
  */
-const toExportedSpecifier = (state) => async (impSpecifier) => {
+const findExportedSpecifier = async (state, impSpecifier) => {
     // sanity check
     if (!impSpecifier)
         throw new NullImportSpecifierError();
@@ -230,6 +267,8 @@ const toExportedSpecifier = (state) => async (impSpecifier) => {
     let depth = 0;
     let nextSpecifier = impSpecifier;
     let expSpecifier;
+
+    debug('RESOLVING', impSpecifier);
 
     while(nextSpecifier != null) {
         depth += 1;
@@ -245,54 +284,44 @@ const toExportedSpecifier = (state) => async (impSpecifier) => {
 };
 
 /**
- * @callback TransformDataMapper
- * @param {Promise.<ExportedSpecifierResult>} result The result of processing
- * an import specifier with {@link toExportedSpecifier}.
- * @returns {Promise.<TransformDataKvp>} A key-value-pair of the local
- * identifer name to the data describing a Babel transformation.
- */
-
-/**
- * Creates a function that can be used with `Array#map` that will
- * map the results of {@link toExportedSpecifier} to the data needed
- * to create a Babel transformation.
+ * Produces {@link TransformData} from the {@link ExportedSpecifierResult `result`}
+ * and adds it to the given {@link TransformsMap `transformsMap`}.
  * 
- * @param {State} state The state object of the plugin.
- * @returns {TransformDataMapper}
+ * @param {State} state
+ * The state object of the plugin.
+ * @param {TransformsMap} transformsMap
+ * The map to add the transform data to.
+ * @param {ExportedSpecifierResult} result
+ * The result of processing an import specifier with {@link findExportedSpecifier}.
  */
-const toTransformData = (state) => async (result) => {
-    const { impSpecifier, expSpecifier } = await result;
-    const importPath = state.makeImportPath(expSpecifier);
+const addTransformData = (state, transformsMap, result) => {
+    const { impSpecifier, expSpecifier } = result;
 
     // sanity check
-    if (!importPath) {
-        state.loader.emitWarning([
+    if (!expSpecifier.path) {
+        state.loader.emitWarning(new Error([
             'problem while creating transformations',
             'the resolved specifier had no importable path',
-            `no transformation will be performed on the import containing \`${impSpecifier.name}\``
-        ].join('; '));
+            'no transformations will be performed for this module'
+        ].join('; ')));
 
-        const kvps = Object.keys(expSpecifier)
-            .map(k => [k, expSpecifier[k]].join(' => '));
-
-        state.loader.emitWarning(['resolved specifier', kvps.join('; ')].join(': '));
+        state.loader.emitWarning(new Error([
+            'resolved specifier',
+            require('util').inspect(expSpecifier)
+        ].join(': ')));
 
         throw abortSignal;
     }
 
-    const transformData = {
+    transformsMap.set(impSpecifier.name, {
         type: expSpecifier.type,
         exportedName: expSpecifier.searchName,
-        path: importPath
-    };
-
-    return [impSpecifier.name, transformData];
+        path: expSpecifier.path.toString(ospath.dirname(state.sourcePath))
+    });
 };
 
 module.exports = {
     setupState,
-    toTransformsMap,
-    abortSignal,
-    toExportedSpecifier,
-    toTransformData
+    addImportTransforms,
+    abortSignal
 };

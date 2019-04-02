@@ -6,10 +6,15 @@ const ospath = require('path');
  * @prop {string} [ident]
  * A string identifying the current loader.  This is used for creating multiple
  * caches, in case of concurrent compilations.
+ * @prop {boolean} [syncMode]
+ * When `true`, the loader will perform its loading synchronously, transforming
+ * only one file at a time instead of executing all possible transformations all
+ * at once.  If you have issues compiling your bundle, enabling this may allow
+ * your bundle to compile.
  * @prop {boolean} [transformDefaultImports]
  * Whether to try and transform default imports and exports.
  * @prop {(boolean|string[])} [ignoreSideEffects]
- * When a `true`, disables side-effect checking.  When an array-of-strings,
+ * When `true`, disables side-effect checking.  When an array-of-strings,
  * specifies a list of files and/or node-modules to skip side-effects checking.
  * Supports globs for files, but not node-modules.
  * @prop {(string|Object)} [babelConfig]
@@ -23,6 +28,7 @@ const ospath = require('path');
 /** @type {LoaderOptions} */
 const defaultLoaderOptions = Object.freeze({
     ident: 'unnamed',
+    syncMode: false,
     transformDefaultImports: false,
     ignoreSideEffects: false,
     babelConfig: null
@@ -45,6 +51,9 @@ const doError = (messages) => {
  */
 const validate = (options) => {
     options = Object.assign({}, defaultLoaderOptions, options);
+
+    if (typeof options.syncMode !== 'boolean')
+        throw doError('the `syncMode` option must be a boolean value');
 
     if (typeof options.transformDefaultImports !== 'boolean')
         throw doError('the `transformDefaultImports` option must be a boolean value');
