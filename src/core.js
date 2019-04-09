@@ -3,7 +3,7 @@ const utils = require('./utils');
 const NullImportSpecifierError = require('./errors').NullImportSpecifierError;
 const ImportSpecifier = require('./extractImportSpecifiers').ImportSpecifier;
 
-/** @typedef {import('./common').Debug} Debug */
+/** @typedef {import('./debugging').Debug} Debug */
 /** @typedef {import('./common').LoaderContext} LoaderContext */
 /** @typedef {import('./transformLoader').TransformContext} TransformContext */
 /** @typedef {import('./babel').TransformData} TransformData */

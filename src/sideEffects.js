@@ -6,6 +6,7 @@ const mm = require('micromatch');
 const utils = require('./utils');
 const fixPath = utils.appendCurPath;
 
+/** @typedef {import('./debugging').Debug} Debug */
 /** @typedef {import('./common').Context} Context */
 /** @typedef {import('./common').LoaderContext} LoaderContext */
 /** @typedef {import('./options').LoaderOptions} LoaderOptions */

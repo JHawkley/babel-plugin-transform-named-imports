@@ -3,8 +3,8 @@ const ospath = require('path');
 const $ = require('./constants');
 const utils = require('./utils');
 
+/** @typedef {import('./debugging').Debug} Debug */
 /** @typedef {import('./common').LoaderContext} LoaderContext */
-/** @typedef {import('./common').Debug} Debug */
 
 const $$resolveImpl = Symbol('path-resolver:resolve-impl');
 

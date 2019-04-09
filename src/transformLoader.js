@@ -6,10 +6,11 @@ const common = require('./common');
 const utils = require('./utils');
 const errors = require('./errors');
 const createBabelPlugin = require('./babel');
+const validateOptions = require('./options').validate;
+const { debugBase, report } = require('./debugging');
 const { setupState, addTransforms, abortSignal } = require('./core');
-const { validate: validateOptions } = require('./options');
 
-/** @typedef {import('./common').Debug} Debug */
+/** @typedef {import('./debugging').Debug} Debug */
 /** @typedef {import('./common').SourceMap} SourceMap */
 /** @typedef {import('./common').LoaderContext} LoaderContext */
 /** @typedef {import('./common').SharedContext} SharedContext */
@@ -136,7 +137,7 @@ function transformImportsLoader(source, sourceMap, meta) {
 
     if (!request || !rootContext) {
         const inspection = require('util').inspect(this, { depth: 2, getters: true });
-        common.debugBase('NO PATH AVAILABLE', inspection);
+        debugBase('NO PATH AVAILABLE', inspection);
         this.callback(null, source, sourceMap, meta);
         return void 0;
     }
@@ -154,19 +155,19 @@ function transformImportsLoader(source, sourceMap, meta) {
         loader: this
     });
 
-    common.report.startReportPendingLoaders();
-    common.report.registerLoader(request);
+    report.startReportPendingLoaders();
+    report.registerLoader(request);
     debugLoader('START');
 
     transform(source, sourceMap, context).then(
         ([code, map]) => {
             debugLoader('DONE');
-            common.report.unregisterLoader(request);
+            report.unregisterLoader(request);
             callback(null, code, map, meta);
         },
         (err) => {
             debugLoader('FAILED', err);
-            common.report.unregisterLoader(request);
+            report.unregisterLoader(request);
             callback(err);
         }
     );

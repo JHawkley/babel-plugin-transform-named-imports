@@ -7,7 +7,7 @@ const $ = require('./constants');
 const common = require('./common');
 const utils = require('./utils');
 
-/** @typedef {import('./common').Debug} Debug */
+/** @typedef {import('./debugging').Debug} Debug */
 /** @typedef {import('./common').SourceMap} SourceMap */
 /** @typedef {import('./common').WebpackModule} WebpackModule */
 /** @typedef {import('./common').LoaderContext} LoaderContext */
