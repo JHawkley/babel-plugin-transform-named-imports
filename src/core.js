@@ -296,11 +296,14 @@ const addTransformData = (state, transformsMap, result) => {
     
     const isImport = inSpecifier instanceof ImportSpecifier;
     const identifier = isImport ? inSpecifier.name : inSpecifier.exportedName;
+    const exportedName
+        = isImport ? outSpecifier.searchName
+        : outSpecifier.importedName || outSpecifier.name;
 
     transformsMap.set(identifier, {
         declarationType: isImport ? $.import : $.export,
         specifierType: outSpecifier.type,
-        exportedName: isImport ? outSpecifier.searchName : outSpecifier.name,
+        exportedName: exportedName,
         path: outSpecifier.path.toString(state.sourceContext),
         sideEffects: outSideEffects
     });

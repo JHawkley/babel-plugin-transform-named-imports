@@ -50,7 +50,7 @@ class ExportSpecifier {
 
         const localName = node.declaration.name;
 
-        return new ExportSpecifier(localName, $.default, null, $.default);
+        return new ExportSpecifier(localName, null, $.default, null, $.default);
     }
 
     /**
@@ -70,12 +70,16 @@ class ExportSpecifier {
         if (type === $.unknown) return null;
 
         const localName = (specifier.local || specifier.exported).name;
+        const importedName
+            = !path ? null
+            : type === $.default ? $.default
+            : localName;
         const exportedName
             = specifier.exported ? specifier.exported.name
             : type === $.default ? $.default
             : localName;
         
-        return new ExportSpecifier(localName, exportedName, path, type);
+        return new ExportSpecifier(localName, importedName, exportedName, path, type);
     }
 
     /**
@@ -96,6 +100,8 @@ class ExportSpecifier {
      * 
      * @param {string} localName
      * The name of the export's local identifier.
+     * @param {?string} importedName
+     * The imported name.
      * @param {?string} exportedName
      * The exported name.
      * @param {?ResolvedPath} path
@@ -104,15 +110,18 @@ class ExportSpecifier {
      * @param {('default'|'namespace'|'named')} type
      * The type of the export.
      */
-    constructor(localName, exportedName, path, type) {
+    constructor(localName, importedName, exportedName, path, type) {
         /** The local name of the exported value. */
         this.name = localName;
+
+        /** The name that the value was imported under. */
+        this.importedName = importedName || null;
 
         /** The name that the value was exported under. */
         this.exportedName = exportedName || null;
 
         /** The name to search for when locating related imports. */
-        this.searchName = localName;
+        this.searchName = importedName || localName;
 
         /** The resolved path of the imported module. */
         this.path = path || null;
@@ -133,6 +142,7 @@ class ExportSpecifier {
             __pickledType: $.exportSpec,
             unapplied: [
                 this.name,
+                this.importedName,
                 this.exportedName,
                 this.path,
                 this.type
@@ -146,10 +156,11 @@ class ExportSpecifier {
      * @returns {string}
      */
     [util.inspect.custom]() {
-        const { name, path, type, exportedName: exp } = this;
-        const asName = exp === name ? name : `${name} as ${exp}`;
+        const { name, path, type, importedName: imp, exportedName: exp, searchName: search } = this;
+        const properName = type === $.namespace ? '*' : imp || name;
+        const asName = exp === properName ? exp : `${properName} as ${exp}`;
         return [
-            `${type} export { ${asName} } via ${name}`,
+            `${type} export { ${asName} } via ${search}`,
             path && `from "${path.original}"`
         ].filter(Boolean).join(' ');
     }

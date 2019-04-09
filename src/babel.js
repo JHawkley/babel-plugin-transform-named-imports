@@ -100,10 +100,8 @@ const domains = {
     [$.export]: {
         declaration: (specifiers, source) =>
             types.exportNamedDeclaration(null, specifiers, source),
-        defaultSpecifier: (local, exported) =>
-            local === exported
-            ? types.exportDefaultSpecifier(types.identifier(exported))
-            : domains[$.export].namedSpecifier(local, exported),
+        defaultSpecifier: (local) =>
+            types.exportDefaultSpecifier(types.identifier(local)),
         namespaceSpecifier: (local, exported) =>
             types.exportNamespaceSpecifier(types.identifier(exported)),
         namedSpecifier: (local, exported) =>

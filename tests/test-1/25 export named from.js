@@ -1,0 +1,1 @@
+export { theFirstFunc } from "testmodule";

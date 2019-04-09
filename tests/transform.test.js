@@ -190,6 +190,45 @@ loaderTester({
 });
 
 loaderTester({
+    describe: 'transformation of `export-from`',
+    rules: setupRules({
+        transformDefaultImports: true
+    }),
+    babelConfig: createBabelConfig(),
+    context: fixtureRoot('test-1'),
+    tests: {
+        // these tests are transformed by Babel,
+        // which is why they look a little different
+
+        'should be able to transform export-default-from': {
+            entry: '24 export default from.js',
+            output: `
+                import _theFirstFunc from "./testmodule/myFirstFunc.js";
+                export { _theFirstFunc as theFirstFunc };
+            `,
+        },
+
+        'should be able to transform export-named-from': {
+            entry: '25 export named from.js',
+            output: `
+                import _theFirstFunc from "./testmodule/myFirstFunc.js";
+                export { _theFirstFunc as theFirstFunc };
+            `,
+        },
+
+        'should be able to transform export-namespace-from': {
+            entry: '26 export namespace from.js',
+            output: `
+                import * as _things from "./testmodule/constants.js";
+                export { _things as things };
+                import * as _constants from "./testmodule/constants.js";
+                export { _constants as constants };
+            `,
+        }
+    }
+});
+
+loaderTester({
     describe: 'with `transformDefaultImports === true`',
     rules: setupRules({
         transformDefaultImports: true
@@ -205,7 +244,7 @@ loaderTester({
         'should follow past first encountered default import, using export-from': {
             entry: `23 transformDefaultImports - import nested default export-from.js`,
             output: `import byNameDefaultNestedFunc from "./testmodule/myFirstFunc.js";`,
-        }
+        },
     }
 });
 
