@@ -156,6 +156,13 @@ const coreTests = {
     }
 };
 
+const webpackSpecificTests = {
+    'should be able to handle imports with inline loaders': {
+        entry: '1 inline loader.js',
+        output: `import theOneTrueAnswer from "val-loader!./testmodule/valCode.js";`,
+    }
+};
+
 loaderTester({
     describe: 'core functionality (async mode)',
     rules: setupRules(),
@@ -181,12 +188,7 @@ loaderTester({
     }),
     babelConfig: createBabelConfig(),
     context: fixtureRoot('test-2'),
-    tests: {
-        'should be able to handle imports with inline loaders': {
-            entry: '1 inline loader.js',
-            output: `import theOneTrueAnswer from "val-loader!./testmodule/valCode.js";`,
-        }
-    }
+    tests: webpackSpecificTests,
 });
 
 loaderTester({
@@ -225,7 +227,27 @@ loaderTester({
                 export { _constants as constants };
             `,
         }
-    }
+    },
+});
+
+loaderTester({
+    describe: 'core tests, with `unsafeAstCaching === true`',
+    rules: setupRules({
+        unsafeAstCaching: true
+    }),
+    babelConfig: createBabelConfig(),
+    context: fixtureRoot('test-1'),
+    tests: coreTests,
+});
+
+loaderTester({
+    describe: 'webpack-specific tests, with `unsafeAstCaching === true`',
+    rules: setupRules({
+        unsafeAstCaching: true
+    }),
+    babelConfig: createBabelConfig(),
+    context: fixtureRoot('test-2'),
+    tests: webpackSpecificTests,
 });
 
 loaderTester({
@@ -245,7 +267,7 @@ loaderTester({
             entry: `23 transformDefaultImports - import nested default export-from.js`,
             output: `import byNameDefaultNestedFunc from "./testmodule/myFirstFunc.js";`,
         },
-    }
+    },
 });
 
 const sideEffectConfig = (config) => {
@@ -289,7 +311,7 @@ loaderTester({
             entry: '7 side-effecting local loader import.js',
             output: `import { FOO as loadedFoo } from "val-loader!./testmodule/valCode.js";`,
         }
-    }
+    },
 });
 
 loaderTester({
@@ -345,5 +367,5 @@ loaderTester({
                 import doTheDeepThing from "./node_modules/side-effecty/doTheThing.js";
             `,
         }
-    }
+    },
 });
