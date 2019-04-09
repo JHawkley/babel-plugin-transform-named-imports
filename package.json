@@ -1,7 +1,7 @@
 {
   "name": "resolve-imports-loader",
   "version": "1.0.0",
-  "description": "Resolves imports to the original export.",
+  "description": "A Webpack loader that resolves imports to the original export.",
   "keywords": [
     "transform",
     "resolve",
@@ -10,17 +10,23 @@
     "loader"
   ],
   "homepage": "https://github.com/SectorLabs/babel-plugin-transform-named-import#readme",
-  "author": "James Dean <james.dean.wm@gmail.com>",
+  "author": {
+    "name": "James Dean",
+    "url": "https://github.com/JHawkley"
+  },
   "contributors": [
-    "Swen Kooij <swen@sectorlabs.ro>"
+    {
+      "name": "Swen Kooij",
+      "email": "swen@sectorlabs.ro"
+    }
   ],
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/SectorLabs/babel-plugin-transform-named-import.git"
+    "url": "git+https://github.com/JHawkley/resolve-imports-loader.git"
   },
   "bugs": {
-    "url": "https://github.com/SectorLabs/babel-plugin-transform-named-import/issues"
+    "url": "https://github.com/JHawkley/resolve-imports-loader/issues"
   },
   "main": "index.js",
   "files": ["*.js", "src/*.js"],
