@@ -19,12 +19,11 @@ const resolveConfig = (path, config) => {
                 babelrcRoots: [ospath.join(babelrcRoot, '**/*')]
             };
         }
-        else {
-            return {
-                configFile: config,
-                babelrc: false
-            };
-        }
+
+        return {
+            configFile: config,
+            babelrc: false
+        };
     }
 
     return config;
