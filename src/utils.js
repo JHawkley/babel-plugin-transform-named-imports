@@ -10,8 +10,8 @@ const ospath = require('path');
 
 /**
  * A decomposed request.
- * * [0] The path portions.
- * * [1] The loader portion.
+ * * [0] The path portion.
+ * * [1] The loaders portion.
  * * [2] The query portion.
  * @typedef {[string, ?string, ?string]} DecomposedRequest
  */
@@ -41,8 +41,10 @@ const rePath = /^(.*!)?(.*?)(\?.*)?$/;
  * Decomposes a path into its module path, loaders, and query.
  * 
  * @static
- * @param {string} originalPath The request to decompose.
- * @returns {DecomposedRequest} The decomposed request.
+ * @param {string} originalPath
+ * The request to decompose.
+ * @returns {DecomposedRequest}
+ * The decomposed request.
  */
 const decomposePath = (originalPath) => {
     const decomposedPath = rePath.exec(originalPath);

@@ -1,5 +1,5 @@
 /* global test, describe, expect */
-const path = require('path');
+const ospath = require('path');
 const webpack = require('webpack');
 const memoryFS = require('memory-fs');
 
@@ -70,7 +70,7 @@ const memoryFS = require('memory-fs');
  */
 
 const fixPath = (p) =>
-    path.isAbsolute(p) || p.startsWith('.') ? p : `./${p}`;
+    ospath.isAbsolute(p) || p.startsWith('.') ? p : `./${p}`;
 
 const splitLines = (source) =>
     source.split('\n').map(line => line.trim()).filter(Boolean);
@@ -113,7 +113,7 @@ const createWebpackConfig = (options) => {
         context,
         resolve: { modules: [context, 'node_modules'] },
         output: {
-            path: path.resolve(__dirname),
+            path: ospath.resolve(__dirname),
             filename: 'bundle.js',
         },
         module: { rules },
@@ -146,7 +146,7 @@ const createWebpackConfig = (options) => {
         ].join('; '));
     }
 
-    if (!path.isAbsolute(options.context)) {
+    if (!ospath.isAbsolute(options.context)) {
         throw new Error([
             'the `context` property of the Webpack configuration must be an absolute path',
             'please check your `context` or `webpackConfig` property'

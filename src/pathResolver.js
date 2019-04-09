@@ -1,13 +1,31 @@
 const ospath = require('path');
+
+const $ = require('./constants');
 const utils = require('./utils');
 
-/** @typedef {import('./index').LoaderContext} LoaderContext */
-/** @typedef {import('./index').Debug} Debug */
+/** @typedef {import('./common').LoaderContext} LoaderContext */
+/** @typedef {import('./common').Debug} Debug */
+
+const $$resolveImpl = Symbol('path-resolver:resolve-impl');
 
 /**
  * A class containing information about a resolved path.
  */
 class ResolvedPath {
+
+    /**
+     * Revives a {@link ResolvedPath} that was serialized to JSON.
+     * 
+     * @param {Object} data
+     * The data to revive an instance from.
+     * @returns {?ResolvedPath}
+     * The revived {@link ResolvedPath} instance, or `null` if the data
+     * was invalid.
+     */
+    static revive(data) {
+        if (!data || data.__pickledType !== $.resolvedPath) return null;
+        return new ResolvedPath(...data.unapplied);
+    }
 
     /**
      * Creates an instance of {@link ResolvedPath}.
@@ -58,6 +76,25 @@ class ResolvedPath {
         const { resolvedPath, loaders, query } = this;
         const path = utils.appendCurPath(ospath.relative(context, resolvedPath));
         return [loaders, path, query].filter(Boolean).join('');
+    }
+
+    /**
+     * Prepares this {@link ResolvedPath} instance for JSON serialization.
+     * 
+     * @returns {Object}
+     * The data for the instance.  Use {@link ResolvedPath.revive} to
+     * restore the instance later.
+     */
+    toJSON() {
+        return {
+            __pickledType: $.resolvedPath,
+            unapplied: [
+                this.originalPath,
+                this.resolvedPath,
+                this.loaders,
+                this.query
+            ]
+        };
     }
 }
 
@@ -114,7 +151,7 @@ class PathResolver {
             const [issuerPath] = utils.decomposePath(issuer);
 
             const [requestPath, loaders, query] = utils.decomposePath(request);
-            const resolvedPath = await this.resolveImpl(requestPath, issuerPath);
+            const resolvedPath = await this[$$resolveImpl](requestPath, issuerPath);
             return new ResolvedPath(requestPath, resolvedPath, loaders, query);
         }
         catch (error) {
@@ -137,7 +174,7 @@ class PathResolver {
      * @throws {Error}
      * When the path could not be resolved.
      */
-    async resolveImpl(request, issuer) {
+    async [$$resolveImpl](request, issuer) {
         const cacheKey = `${issuer} => ${request}`;
         let resolvingPath = this.cache.get(cacheKey);
 

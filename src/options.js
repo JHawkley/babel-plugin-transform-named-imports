@@ -1,11 +1,13 @@
 const ospath = require('path');
+const loaderUtils = require('loader-utils');
 
 /**
  * The options recognized by the plugin.
  * @typedef LoaderOptions
  * @prop {string} [ident]
  * A string identifying the current loader.  This is used for creating multiple
- * caches, in case of concurrent compilations.
+ * caches, in case of concurrent compilations.  If not provided, an identifier
+ * will be created by hashing the contents of the options object.
  * @prop {boolean} [syncMode]
  * When `true`, the loader will perform its loading synchronously, transforming
  * only one file at a time instead of executing all possible transformations all
@@ -13,25 +15,32 @@ const ospath = require('path');
  * your bundle to compile.
  * @prop {boolean} [transformDefaultImports]
  * Whether to try and transform default imports and exports.
- * @prop {(boolean|string[])} [ignoreSideEffects]
- * When `true`, disables side-effect checking.  When an array-of-strings,
- * specifies a list of files and/or node-modules to skip side-effects checking.
- * Supports globs for files, but not node-modules.
+ * @prop {boolean} [transformSideEffects]
+ * When `true`, side-effecting modules that are encountered will still be
+ * transformed, however this will add a side-effecting import to the result
+ * to ensure the side-effects still execute.
  * @prop {(string|Object)} [babelConfig]
  * When provided, this config will be provided to Babel when parsing modules
  * into an AST.  Can be either an absolute path to a config file or a config
  * object which will be mixed into the loader's required options.  Babel
  * is usually smart enough to obtain configuration itself, so this option
  * is mostly intended for testing purposes.
+ * @prop {boolean} [unsafeAstCaching]
+ * When `true`, the loader will try to save some work by caching the Babel
+ * AST on the Webpack module object after resolving the specifiers of
+ * a module.  This generally should work, however it makes the assumption that
+ * the `spec-loader` is getting the same source that the `transform-loader`
+ * is working with.  If another loader changes the loaders during the `pitch`
+ * phase, this could break that assumption.
  */
 
 /** @type {LoaderOptions} */
 const defaultLoaderOptions = Object.freeze({
-    ident: 'unnamed',
     syncMode: false,
     transformDefaultImports: false,
-    ignoreSideEffects: false,
-    babelConfig: null
+    transformSideEffects: false,
+    babelConfig: null,
+    unsafeAstCaching: false
 });
 
 const doError = (messages) => {
@@ -42,6 +51,18 @@ const doError = (messages) => {
     return new Error(messages.join('; '));
 };
 
+const getIdent = (options) => {
+    if (typeof options.ident === 'string') return options.ident;
+
+    const json = JSON.stringify(options, (k, v) => {
+        if (typeof v !== 'function') return v;
+        if (v.name) return `${v.name}::${v.toString()}`;
+        return v.toString();
+    });
+
+    return loaderUtils.getHashDigest(json, 'md5', 'hex', 32);
+};
+
 /**
  * Validates the plugin's options object and finalizes the options.
  * 
@@ -50,29 +71,19 @@ const doError = (messages) => {
  * @throws When the provided options object fails validation.
  */
 const validate = (options) => {
-    options = Object.assign({}, defaultLoaderOptions, options);
+    options = Object.assign({}, defaultLoaderOptions, options, { ident: getIdent(options) });
 
     if (typeof options.syncMode !== 'boolean')
         throw doError('the `syncMode` option must be a boolean value');
 
     if (typeof options.transformDefaultImports !== 'boolean')
         throw doError('the `transformDefaultImports` option must be a boolean value');
-
-    if (typeof options.ignoreSideEffects !== 'boolean') {
-        if (!Array.isArray(options.ignoreSideEffects)) {
-            throw doError([
-                'the `ignoreSideEffects` option must be either',
-                'a boolean value or an array of strings'
-            ].join(' '));
-        }
-
-        if (options.ignoreSideEffects.some(path => typeof path !== 'string')) {
-            throw doError([
-                'when set to an array, the `ignoreSideEffects` option',
-                'can only contain strings'
-            ].join(' '));
-        }
-    }
+    
+    if (typeof options.transformSideEffects !== 'boolean')
+        throw doError('the `transformSideEffects` option must be a boolean value');
+    
+    if (typeof options.unsafeAstCaching !== 'boolean')
+        throw doError('the `unsafeAstCaching` option must be a boolean value');
 
     if (options.babelConfig != null) {
         const { babelConfig } = options;

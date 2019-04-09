@@ -22,11 +22,13 @@
   "bugs": {
     "url": "https://github.com/SectorLabs/babel-plugin-transform-named-import/issues"
   },
-  "main": "src/index.js",
+  "main": "index.js",
+  "files": ["*.js", "src/*.js"],
   "engines": {
     "node": ">=7.7.1"
   },
   "dependencies": {
+    "array-move": "2.x",
     "debug": "4.x",
     "is-valid-path": "0.1.x",
     "loader-utils": "1.x",
@@ -34,6 +36,7 @@
   },
   "devDependencies": {
     "@babel/core": "7.x",
+    "@babel/plugin-proposal-export-default-from": "7.x",
     "@babel/plugin-proposal-export-namespace-from": "7.x",
     "@babel/plugin-syntax-dynamic-import": "7.x",
     "@babel/plugin-syntax-import-meta": "7.x",
@@ -53,7 +56,7 @@
   },
   "scripts": {
     "test": "jest",
-    "test-report": "DEBUG=\"resolve-imports-loader*\" jest",
+    "test-report": "DEBUG=\"resolve-imports-loader*,-*:pending\" jest",
     "debug-test": "node --inspect-brk node_modules/.bin/jest --runInBand"
   },
   "jest": {

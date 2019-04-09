@@ -1,8 +1,9 @@
 /* global jest */
-const path = require('path');
+const ospath = require('path');
 const loaderTester = require('./loader-tester');
+const { specLoaderRule } = require('../index');
 
-const loader = path.resolve(__dirname, '../src/index.js');
+const loaderPath = ospath.resolve(__dirname, '../index.js');
 jest.setTimeout(30000);
 
 const createBabelConfig = (options) => {
@@ -10,6 +11,7 @@ const createBabelConfig = (options) => {
         configFile: false,
         babelrc: false,
         plugins: [
+            '@babel/plugin-proposal-export-default-from',
             '@babel/plugin-proposal-export-namespace-from',
             '@babel/plugin-syntax-dynamic-import',
             '@babel/plugin-syntax-import-meta'
@@ -22,7 +24,7 @@ const createBabelConfig = (options) => {
     return Object.assign(baseOptions, options);
 };
 
-const fixtureRoot = (fixtureDir) => path.resolve(__dirname, fixtureDir);
+const fixtureRoot = (fixtureDir) => ospath.resolve(__dirname, fixtureDir);
 
 const setupRules = (loaderOptions = {}) => ({babelConfig, enforce}) => {
     const use = [];
@@ -32,9 +34,9 @@ const setupRules = (loaderOptions = {}) => ({babelConfig, enforce}) => {
         loaderOptions.babelConfig = babelConfig;
     }
 
-    use.push({ loader, options: loaderOptions });
+    use.push({ loader: loaderPath, options: loaderOptions });
     
-    return [{ test: /\.js$/, enforce, use }];
+    return [specLoaderRule, { test: /\.js$/, enforce, use }];
 };
 
 const coreTests = {
@@ -156,9 +158,7 @@ const coreTests = {
 
 loaderTester({
     describe: 'core functionality (async mode)',
-    rules: setupRules({
-        ignoreSideEffects: true
-    }),
+    rules: setupRules(),
     babelConfig: createBabelConfig(),
     context: fixtureRoot('test-1'),
     tests: coreTests,
@@ -167,8 +167,7 @@ loaderTester({
 loaderTester({
     describe: 'core functionality (sync mode)',
     rules: setupRules({
-        syncMode: true,
-        ignoreSideEffects: true
+        syncMode: true
     }),
     babelConfig: createBabelConfig(),
     context: fixtureRoot('test-1'),
@@ -178,7 +177,6 @@ loaderTester({
 loaderTester({
     describe: 'webpack-specific functionality',
     rules: setupRules({
-        ignoreSideEffects: true,
         transformDefaultImports: true
     }),
     babelConfig: createBabelConfig(),
@@ -194,7 +192,6 @@ loaderTester({
 loaderTester({
     describe: 'with `transformDefaultImports === true`',
     rules: setupRules({
-        ignoreSideEffects: true,
         transformDefaultImports: true
     }),
     babelConfig: createBabelConfig(),
@@ -221,9 +218,9 @@ const sideEffectConfig = (config) => {
 };
 
 loaderTester({
-    describe: 'with `ignoreSideEffects === false`',
+    describe: 'with `transformSideEffects === false`',
     rules: setupRules({
-        ignoreSideEffects: false
+        transformSideEffects: false
     }),
     webpackConfig: sideEffectConfig,
     babelConfig: createBabelConfig(),
@@ -257,12 +254,9 @@ loaderTester({
 });
 
 loaderTester({
-    describe: 'with `Array.isArray(ignoreSideEffects) === true`',
+    describe: 'with `transformSideEffects === true`',
     rules: setupRules({
-        ignoreSideEffects: [
-            'side-effecty',
-            './testmodule/**/*'
-        ]
+        transformSideEffects: true
     }),
     webpackConfig: sideEffectConfig,
     babelConfig: createBabelConfig(),
@@ -271,19 +265,46 @@ loaderTester({
     enforce: 'post',
     context: fixtureRoot('test-3'),
     tests: {
-        'should ignore local side-effects': {
+        'should respect local side-effects': {
             entry: '5 ignore side-effecting local import.js',
-            output: `import { FOO as sideEffectFoo } from "./testmodule/constants.js";`,
+            output: `
+                import "./testmodule/sideEffects.js";
+                import { FOO as sideEffectFoo } from "./testmodule/constants.js";
+            `,
         },
 
-        'should be able to ignore node-modules by name': {
+        'should add a side-effecting import': {
             entry: '6 ignore side-effecting node-module import.js',
-            output: `import doTheThing from "./node_modules/side-effecty/doTheThing.js";`,
+            output: `
+                import "./node_modules/side-effecty/index.js";
+                import doTheThing from "./node_modules/side-effecty/doTheThing.js";
+            `,
         },
 
         'should be able to handle side-effecting imports with inline loaders': {
             entry: '7 side-effecting local loader import.js',
-            output: `import { FOO as loadedFoo } from "./testmodule/constants.js";`,
+            output: `
+                import "val-loader!./testmodule/valCode.js";
+                import { FOO as loadedFoo } from "./testmodule/constants.js";
+            `,
+        },
+
+        'should add a side-effecting import if side-effects are deeper than one level': {
+            entry: '8 deep side-effect import.js',
+            output: `
+                import "./node_modules/side-effecty/index.js";
+                import "./node_modules/side-effecty/deeper.js";
+                import doTheDeepThing from "./node_modules/side-effecty/doTheThing.js";
+            `,
+        },
+        'should combine identical side-effecting imports': {
+            entry: '9 multiple side-effect import.js',
+            output: `
+                import "./node_modules/side-effecty/index.js";
+                import "./node_modules/side-effecty/deeper.js";
+                import doTheThing from "./node_modules/side-effecty/doTheThing.js";
+                import doTheDeepThing from "./node_modules/side-effecty/doTheThing.js";
+            `,
         }
     }
 });

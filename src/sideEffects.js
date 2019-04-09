@@ -6,8 +6,8 @@ const mm = require('micromatch');
 const utils = require('./utils');
 const fixPath = utils.appendCurPath;
 
-/** @typedef {import('./index').Context} Context */
-/** @typedef {import('./index').LoaderContext} LoaderContext */
+/** @typedef {import('./common').Context} Context */
+/** @typedef {import('./common').LoaderContext} LoaderContext */
 /** @typedef {import('./options').LoaderOptions} LoaderOptions */
 /** @typedef {import('./pathResolver')} PathResolver */
 

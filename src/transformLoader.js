@@ -1,39 +1,68 @@
 const loaderUtils = require('loader-utils');
 const babel = require('@babel/core');
 
-const { debugBase, report, contexts } = require('./common');
-const { setupState, addImportTransforms, abortSignal } = require('./core');
-const { createBabelPlugin } = require('./babel');
-const { validate: validateOptions } = require('./options');
+const $ = require('./constants');
+const common = require('./common');
 const utils = require('./utils');
+const errors = require('./errors');
+const createBabelPlugin = require('./babel');
+const { setupState, addTransforms, abortSignal } = require('./core');
+const { validate: validateOptions } = require('./options');
 
-const PathResolver = require('./pathResolver');
-const SpecResolver = require('./specResolver');
-
-/** @typedef {import('./index').Context} Context */
-/** @typedef {import('./index').SourceMap} SourceMap */
-/** @typedef {import('./index').WebpackModule} WebpackModule */
-/** @typedef {import('./index').LoaderContext} LoaderContext */
+/** @typedef {import('./common').Debug} Debug */
+/** @typedef {import('./common').SourceMap} SourceMap */
+/** @typedef {import('./common').LoaderContext} LoaderContext */
+/** @typedef {import('./common').SharedContext} SharedContext */
+/** @typedef {import('./options').LoaderOptions} LoaderOptions */
+/** @typedef {import('./core').State} State */
+/** @typedef {import('./astParser')} AstParser */
+/** @typedef {import('./astParser').BabelAST} BabelAST */
+/** @typedef {import('./specResolver').SpecifierResult} SpecifierResult */
 
 /**
- * Restores the request string of a loaded resource.
- * Webpack adds a lot of non-relevant information to the `resource` property
- * of the loader context when it is created through `loadModule`.  This
- * information needs to be discarded and the original request path
- * reintegrated.
- * 
- * @param {string} resourcePath
- * The resource path, from the loader.
- * @param {WebpackModule} instance
- * The Webpack module instance.
- * @returns {string}
- * The regenerated request path.
+ * @typedef OwnContext
+ * @prop {string} request
+ * The restored request path.
+ * @prop {LoaderOptions} options
+ * The options for the current loader instance.
+ * @prop {LoaderContext} loader
+ * The context object of the current loader instance.
+ * @prop {Debug} debugLoader
+ * The debug handle for the current loader instance.
  */
-const restoreRequest = (resourcePath, instance) => {
-    if (!resourcePath || !instance.rawRequest) return null;
 
-    const [, loaders, query] = utils.decomposePath(instance.rawRequest);
-    return [loaders, resourcePath, query].filter(Boolean).join('');
+/**
+ * The complete context for a single transform-loader.
+ * 
+ * @typedef {SharedContext & OwnContext} TransformContext
+ */
+
+/**
+ * @param {State} state
+ * @param {AstParser} astParser
+ * @param {string} source
+ * @returns {[SpecifierResult, BabelAST]}
+ */
+const resolveCachedAst = async (state, astParser, source) => {
+    const { request, sourcePath, specResolver } = state;
+    const [specifiers, specModule] = await specResolver.resolveModule(state, request);
+    const ast = specModule.buildMeta[$.cachedAst] || await astParser.parse(sourcePath, source);
+
+    return [specifiers, ast];
+};
+
+/**
+ * @param {State} state
+ * @param {AstParser} astParser
+ * @param {string} source
+ * @returns {[SpecifierResult, BabelAST]}
+ */
+const resolveNewAst = async (state, astParser, source) => {
+    const { request, sourcePath, specResolver } = state;
+    const specifiers = await specResolver.resolve(state, request);
+    const ast = await astParser.parse(sourcePath, source);
+
+    return [specifiers, ast];
 };
 
 /**
@@ -44,26 +73,23 @@ const restoreRequest = (resourcePath, instance) => {
  * The source code of the module.
  * @param {?SourceMap} sourceMap
  * The source-map of the module.
- * @param {Context} context
+ * @param {TransformContext} context
  * The working context.
  * @returns {[string, SourceMap]}
  * A tuple of the output source code and source-map.
  */
 const transform = async (source, sourceMap, context) => {
-    const { request, loader, specResolver } = context;
-    const { resourcePath, _module: instance } = loader;
+    const { astParser, unsafeAstCache } = context;
     const state = setupState(context);
-
-    const loadedModule = { request, resourcePath, source, instance };
-
-    const registered = await specResolver.registerModule(state, loadedModule);
-    if (!registered) return [source, sourceMap];
-
-    const { ast, specifiers: { importSpecifiers } } = registered;
-    if (importSpecifiers.length === 0) return [source, sourceMap];
+    const resolverFn = unsafeAstCache ? resolveCachedAst : resolveNewAst;
 
     try {
-        const allTransformsMap = await addImportTransforms(state, importSpecifiers, new Map());
+        const [{ pathedSpecifiers }, ast] = await resolverFn(state, astParser, source);
+
+        if (pathedSpecifiers.length === 0)
+            return [source, sourceMap];
+
+        const allTransformsMap = await addTransforms(state, pathedSpecifiers, new Map());
         const babelPlugin = createBabelPlugin(allTransformsMap);
 
         const { code, map } = await babel.transformFromAstAsync(ast, source, {
@@ -76,13 +102,20 @@ const transform = async (source, sourceMap, context) => {
         return [code, map];
     }
     catch (error) {
-        if (Object.is(error, abortSignal)) {
-            // abort signal was thrown; just stop without
-            // performing any transformations
-            return [source, sourceMap];
+        switch (true) {
+            case Object.is(error, abortSignal):
+                // abort signal was thrown; just stop without
+                // performing any transformations
+                return [source, sourceMap];
+            case error instanceof errors.SpecifierResolutionError:
+            case error instanceof errors.AstParsingError:
+                // consider these errors non-critical
+                context.loader.emitWarning(error);
+                context.loader.emitWarning(error.innerError);
+                return [source, sourceMap];
+            default:
+                throw error;
         }
-
-        throw error;
     }
 };
 
@@ -97,58 +130,43 @@ const transform = async (source, sourceMap, context) => {
  */
 function transformImportsLoader(source, sourceMap, meta) {
     const { resourcePath, rootContext, _module: instance } = this;
-    const request = restoreRequest(resourcePath, instance);
+    const request = common.restoreRequest(resourcePath, instance);
 
     if (this.cacheable) this.cacheable();
 
     if (!request || !rootContext) {
         const inspection = require('util').inspect(this, { depth: 2, getters: true });
-        debugBase('NO PATH AVAILABLE', inspection);
-        return this.callback(null, source, sourceMap, meta);
+        common.debugBase('NO PATH AVAILABLE', inspection);
+        this.callback(null, source, sourceMap, meta);
+        return void 0;
     }
 
     const options = validateOptions(loaderUtils.getOptions(this));
-    const loaderIdent = options.ident;
-
-    let sharedContext = contexts.get(this._compilation);
-    if (!sharedContext) {
-        const debugRoot = debugBase.extend(loaderIdent);
-        debugRoot('BUILDING SHARED CONTEXT');
-
-        const pathResolver = new PathResolver(this);
-        const specResolver = new SpecResolver(this, options, pathResolver, debugRoot);
-
-        sharedContext = {
-            debugRoot, pathResolver, specResolver,
-            ident: loaderIdent
-        };
-
-        contexts.set(this._compilation, sharedContext);
-    }
+    const sharedContext = common.getSharedContext(this, options);
 
     const callback = this.async();
     const moduleIdent = utils.contextRelative(rootContext, request);
-    const debugLoader = sharedContext.debugRoot.extend(moduleIdent);
+    const debugLoader = sharedContext.debugRoot.extend(`${moduleIdent}:transform`);
 
-    /** @type {Context} */
+    /** @type {TransformContext} */
     const context = Object.assign({}, sharedContext, {
         request, options, debugLoader,
         loader: this
     });
 
-    report.startReportPendingLoaders();
-    report.registerLoader(request);
+    common.report.startReportPendingLoaders();
+    common.report.registerLoader(request);
     debugLoader('START');
 
     transform(source, sourceMap, context).then(
         ([code, map]) => {
             debugLoader('DONE');
-            report.unregisterLoader(request);
+            common.report.unregisterLoader(request);
             callback(null, code, map, meta);
         },
         (err) => {
             debugLoader('FAILED', err);
-            report.unregisterLoader(request);
+            common.report.unregisterLoader(request);
             callback(err);
         }
     );

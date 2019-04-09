@@ -1,43 +1,19 @@
 const util = require('util');
-const $ = require('./constants');
 const types = require('@babel/core').types;
+
+const $ = require('./constants');
+const ResolvedPath = require('./pathResolver').ResolvedPath;
 
 /** @typedef {import('./babel').ExportSpecifierNode} ExportSpecifierNode */
 /** @typedef {import('./babel').ExportDefaultNode} ExportDefaultNode */
 /** @typedef {import('./babel').ExportNamedNode} ExportNamedNode */
 /** @typedef {import('./babel').ExportNode} ExportNode */
-/** @typedef {import('./pathResolver').ResolvedPath} ResolvedPath */
 
 /**
  * @callback ResolveFn
  * @param {string} resolve
  * @returns {Promise.<ResolvedPath>}
  */
-
-/**
-* @typedef ExportSpecifier
-* @prop {string} name The local name of the exported value.
-* @prop {string} exportedName The name that the value was exported under.
-* @prop {string} searchName The name to search for when locating related imports.
-* @prop {?ResolvedPath} path The resolved path of the imported module.
-* @prop {('default'|'namespace'|'named')} type The simple type.
-*/
-
-/**
- * A custom inspector for debugging.
- * 
- * @function
- * @this {ExportSpecifier}
- * @returns {string}
- */
-function customInspect() {
-    const { name, type, exportedName: exp, searchName: search, path } = this;
-    const asName = exp === name ? name : `${name} as ${exp}`;
-    return [
-        `${type} export { ${asName} } via ${search}`,
-        path && `from "${path.original}"`
-    ].filter(Boolean).join(' ');
-}
 
 /**
  * @function
@@ -54,28 +30,131 @@ const getSimpleType = (node) => {
     return $.unknown;
 };
 
-/**
- * @function
- * @param {ExportDefaultNode} node
- * @returns {?ExportSpecifier}
- */
-const handleDefaultExport = (node) => {
-    // only try to follow if the declaration is an identifier;
-    // any other kind of declaration will stop searching at the last
-    // import, in this case
-    if (!types.isIdentifier(node.declaration)) return null;
+/** A class representing the information for an export specifier. */
+class ExportSpecifier {
 
-    const localName = node.declaration.name;
+    /**
+     * Tries to creates a {@link ExportSpecifier} from an {@link ExportDefaultNode}.
+     * Only nodes that export an identifier are compatible.
+     * 
+     * @param {ExportDefaultNode} node
+     * The node to create the specifier from.
+     * @returns {?ExportSpecifier}
+     * A new {@link ExportSpecifier} instance or `null` if the node was incompatible.
+     */
+    static fromDefaultExport(node) {
+        // only try to follow if the declaration is an identifier;
+        // any other kind of declaration will stop searching at the last
+        // import, in this case
+        if (!types.isIdentifier(node.declaration)) return null;
 
-    return {
-        name: localName,
-        exportedName: $.default,
-        searchName: localName,
-        path: null,
-        type: $.default,
-        [util.inspect.custom]: customInspect
-    };
-};
+        const localName = node.declaration.name;
+
+        return new ExportSpecifier(localName, $.default, null, $.default);
+    }
+
+    /**
+     * Tries to creates a {@link ExportSpecifier} from an {@link ExportSpecifierNode}.
+     * 
+     * @param {ExportSpecifierNode} specifier
+     * The specifier node to create the specifier from.
+     * @param {ResolvedPath} path
+     * The resolved path of the import being re-exported.  Only applicable to
+     * the `export ... from` syntax.
+     * @returns {?ExportSpecifier}
+     * A new {@link ExportSpecifier} instance or `null` if the node had an
+     * unrecognized type.
+     */
+    static fromSpecifier(specifier, path) {
+        const type = getSimpleType(specifier);
+        if (type === $.unknown) return null;
+
+        const localName = (specifier.local || specifier.exported).name;
+        const exportedName
+            = specifier.exported ? specifier.exported.name
+            : type === $.default ? $.default
+            : localName;
+        
+        return new ExportSpecifier(localName, exportedName, path, type);
+    }
+
+    /**
+     * Revives a {@link ExportSpecifier} that was serialized to JSON.
+     * 
+     * @param {Object} data
+     * The parsed JSON object.
+     * @returns {ExportSpecifier}
+     * The revived {@link ExportSpecifier} instance.
+     */
+    static revive(data) {
+        if (!data || data.__pickledType !== $.exportSpec) return null;
+        return new ExportSpecifier(...data.unapplied);
+    }
+
+    /**
+     * Creates a new instance of {@link ExportSpecifier}.
+     * 
+     * @param {string} localName
+     * The name of the export's local identifier.
+     * @param {?string} exportedName
+     * The exported name.
+     * @param {?ResolvedPath} path
+     * The resolved path of the import being re-exported.  Only applicable to
+     * the `export ... from` syntax.
+     * @param {('default'|'namespace'|'named')} type
+     * The type of the export.
+     */
+    constructor(localName, exportedName, path, type) {
+        /** The local name of the exported value. */
+        this.name = localName;
+
+        /** The name that the value was exported under. */
+        this.exportedName = exportedName || null;
+
+        /** The name to search for when locating related imports. */
+        this.searchName = localName;
+
+        /** The resolved path of the imported module. */
+        this.path = path || null;
+
+        /** The simple type. */
+        this.type = type;
+    }
+
+    /**
+     * Prepares this {@link ExportSpecifier} instance for JSON serialization.
+     * 
+     * @returns {Object}
+     * The data for the instance.  Use {@link ExportSpecifier.revive} to
+     * restore the instance later.
+     */
+    toJSON() {
+        return {
+            __pickledType: $.exportSpec,
+            unapplied: [
+                this.name,
+                this.exportedName,
+                this.path,
+                this.type
+            ]
+        };
+    }
+
+    /**
+     * A custom inspector for debugging.
+     * 
+     * @returns {string}
+     */
+    [util.inspect.custom]() {
+        const { name, path, type, exportedName: exp } = this;
+        const asName = exp === name ? name : `${name} as ${exp}`;
+        return [
+            `${type} export { ${asName} } via ${name}`,
+            path && `from "${path.original}"`
+        ].filter(Boolean).join(' ');
+    }
+
+}
 
 /**
  * @function
@@ -88,25 +167,9 @@ const handleOtherExport = async (node, resolve) => {
     const specifiers = node.specifiers || [];
     const resolvedPath = node.source && await resolve(node.source.value);
 
-    return specifiers.map((specifier) => {
-        const type = getSimpleType(specifier);
-        if (type === $.unknown) return null;
-
-        const localName = (specifier.local || specifier.exported).name;
-        const exportedName
-            = specifier.exported ? specifier.exported.name
-            : type === $.default ? $.default
-            : localName;
-
-        return {
-            name: localName,
-            exportedName: exportedName,
-            searchName: localName,
-            path: resolvedPath || null,
-            type: type,
-            [util.inspect.custom]: customInspect
-        };
-    });
+    return specifiers.map((specifier) =>
+        ExportSpecifier.fromSpecifier(specifier, resolvedPath)
+    );
 };
 
 /**
@@ -122,7 +185,7 @@ const handleOtherExport = async (node, resolve) => {
 module.exports = async (declarations, resolve) => {
     const promisedExps = declarations.map((node) => {
         return types.isExportDefaultDeclaration(node)
-            ? handleDefaultExport(node)
+            ? ExportSpecifier.fromDefaultExport(node)
             : handleOtherExport(node, resolve);
     });
 
@@ -130,3 +193,5 @@ module.exports = async (declarations, resolve) => {
         .apply([], await Promise.all(promisedExps))
         .filter(Boolean);
 };
+
+module.exports.ExportSpecifier = ExportSpecifier;

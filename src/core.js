@@ -1,45 +1,45 @@
-const ospath = require('path');
-
 const $ = require('./constants');
-const NullImportSpecifierError = require('./errors').NullImportSpecifierError;
 const utils = require('./utils');
+const NullImportSpecifierError = require('./errors').NullImportSpecifierError;
+const ImportSpecifier = require('./extractImportSpecifiers').ImportSpecifier;
 
-/** @typedef {import('./index').Debug} Debug */
-/** @typedef {import('./index').Context} Context */
-/** @typedef {import('./index').LoaderContext} LoaderContext */
-/** @typedef {import('./utils').KVP} KVP */
-/** @typedef {import('./babel').ImportNode} ImportNode */
+/** @typedef {import('./common').Debug} Debug */
+/** @typedef {import('./common').LoaderContext} LoaderContext */
+/** @typedef {import('./transformLoader').TransformContext} TransformContext */
 /** @typedef {import('./babel').TransformData} TransformData */
 /** @typedef {import('./babel').TransformsMap} TransformsMap */
 /** @typedef {import('./babel').AllTransformsMap} AllTransformsMap */
 /** @typedef {import('./pathResolver')} PathResolver */
 /** @typedef {import('./specResolver')} SpecResolver */
-/** @typedef {import('./specResolver').LoadedModule} LoadedModule */
+/** @typedef {import('./specResolver').Specifier} Specifier */
 /** @typedef {import('./extractImportSpecifiers').ImportSpecifier} ImportSpecifier */
 /** @typedef {import('./extractExportSpecifiers').ExportSpecifier} ExportSpecifier */
 
-/** @typedef {[string, string, TransformData]} TransformDataEntry */
-
 /**
- * @typedef ExportedSpecifierResult
- * @prop {ImportSpecifier} impSpecifier
- * The original import specifier.
- * @prop {Specifier} expSpecifier
- * The resolved specifier.
+ * @typedef FoundSpecifier
+ * @prop {boolean} hasSideEffects
+ * Whether the module from which `specifier` originated from has side-effects.
+ * @prop {?Specifier} specifier
+ * The next specifier in the chain or `null` if none could be found.
  */
 
 /**
- * Either kind of specifier.
- * @typedef {(ImportSpecifier|ExportSpecifier)} Specifier
+ * @typedef ExportedSpecifierResult
+ * @prop {Specifier} inSpecifier
+ * The original specifier.
+ * @prop {Specifier} outSpecifier
+ * The resolved specifier.
+ * @prop {Specifier[]} sideEffects
+ * An array of specifiers that should be added as side-effecting imports.
  */
 
 /**
  * The state for this loader's work.
  * @typedef State
+ * @prop {string} ident
+ * The `ident` option of the loader.
  * @prop {LoaderContext} loader
  * The Webpack loader context.
- * @prop {function(string): Promise.<?LoadedModule>} loadModule
- * Loads a module.
  * @prop {PathResolver} pathResolver
  * The path-resolver.
  * @prop {SpecResolver} specResolver
@@ -49,19 +49,19 @@ const utils = require('./utils');
  * and query parameters used in the request, but only the module path is an
  * absolute path, and should be equal to `sourcePath`.
  * @prop {string} sourcePath
- * The path to the file being transformed by the plugin.
+ * The path to the file being transformed by the loader.
+ * @prop {string} sourceContext
+ * The directory containing the file being transformed by the loader.
  * @prop {string} rootContext
  * The root-context path.
  * @prop {boolean} syncMode
  * Whether to execute the loader's work in a synchronous way.
  * @prop {boolean} doDefaults
  * Whether to transform default imports and exports.
+ * @prop {boolean} doSideEffects
+ * Whether to transform side-effecting imports and exports.
  * @prop {Debug} debug
  * The debug handle for this state.
- * @prop {Debug} debugPath
- * The debug handle for the path-resolver.
- * @prop {Debug} debugSpec
- * The debug handle for the spec-resolver.
  */
 
 /**
@@ -70,60 +70,36 @@ const utils = require('./utils');
 const abortSignal = Symbol('abort');
 
 /**
- * Called by the `pre` method of the plugin to get the initial state.
+ * Called by the loader to get the initial state.
  * 
- * @param {Context} context
- * The working context of the loader.
+ * @param {TransformContext} context
+ * The working context of the transform-loader.
  * @returns {State}
  * A new state object.
  */
 const setupState = (context) => {
-    // setup configuration only once per file
-    const { request, loader, options, pathResolver, specResolver } = context;
+    const {
+        ident, request, loader, options,
+        pathResolver, specResolver
+    } = context;
+
     const rootContext = loader.rootContext;
     const sourcePath = loader.resourcePath;
+    const sourceContext = loader.context;
     const debug = context.debugLoader.extend('core');
 
-    const loadModule = (request) => {
-        const relPath = utils.contextRelative(rootContext, request);
-        debug('LOADING MODULE', relPath);
-
-        return new Promise((ok, fail) => {
-            loader.loadModule(request, (err, source, map, instance) => {
-                if (err) {
-                    debug(
-                        'MODULE LOAD ERROR %A',
-                        [relPath, err]
-                    );
-                    fail(err);
-                }
-                else if (!instance.type.startsWith('javascript/')) {
-                    debug(
-                        'MODULE LOAD WARNING %A',
-                        [relPath, 'module type was not for a javascript source']
-                    );
-                    ok(null);
-                }
-                else {
-                    const [resourcePath] = utils.decomposePath(request);
-                    ok({ request, resourcePath, source, instance });
-                }
-            });
-        });
-    };
-
     return {
+        ident,
         loader,
-        loadModule,
         pathResolver,
         specResolver,
         request,
         sourcePath,
+        sourceContext,
         rootContext,
         debug,
-        debugSpec: debug.extend('spec-resolver'),
-        debugPath: debug.extend('path-resolver'),
         doDefaults: options.transformDefaultImports,
+        doSideEffects: options.transformSideEffects,
         syncMode: options.syncMode
     };
 };
@@ -133,11 +109,11 @@ const setupState = (context) => {
  * the given `importsMap`.
  * 
  * @param {State} state
- * @param {ImportSpecifiers[]} specifiers
+ * @param {Specifier[]} specifiers
  * @param {AllTransformsMap} allTransformsMap
  * @returns {AllTransformsMap}
  */
-const addImportTransforms = async (state, specifiers, allTransformsMap) => {
+const addTransforms = async (state, specifiers, allTransformsMap) => {
     const { doDefaults, syncMode } = state;
 
     // if there is no work to do, exit immediately
@@ -149,7 +125,7 @@ const addImportTransforms = async (state, specifiers, allTransformsMap) => {
         return allTransformsMap;
 
     const forEach = syncMode ? utils.iterating.sync : utils.iterating.async;
-    await forEach(specifiers, addImportsFrom(state, allTransformsMap));
+    await forEach(specifiers, addSpecifiersFrom(state, allTransformsMap));
 
     return allTransformsMap;
 };
@@ -166,13 +142,13 @@ const addImportTransforms = async (state, specifiers, allTransformsMap) => {
  * The current working state.
  * @param {AllTransformsMap} allTtansformsMap
  * The map to add the import and their transform data to.
- * @param {ImportSpecifier} specifier
- * The specifier of an import declaration.
+ * @param {Specifier} specifier
+ * The specifier of an import or export declaration.
  * @returns {Promise.<void>}
  * A promise that will complete when the function has finished adding
  * the {@link TransformData} to the map.
  */
-const addImportsFrom = (state, allTransformsMap) => async (specifier) => {
+const addSpecifiersFrom = (state, allTransformsMap) => async (specifier) => {
     const importedPath = specifier.path.original;
 
     let transformsMap = allTransformsMap.get(importedPath);
@@ -193,34 +169,40 @@ const addImportsFrom = (state, allTransformsMap) => async (specifier) => {
  * @param {State} state
  * The current working state.
  * @param {Specifier} specifier
- * The specifier to use in the search.
- * @returns {?Specifier}
- * The next specifier in the chain or `null` if it wasn't found.
+ * The specifier to search for.
+ * @returns {FoundSpecifier}
+ * Information about the module and potentially another specifier that continues
+ * the chain of the given `specifier`.
  */
 const findNextSpecifier = async (state, specifier) => {
-    const { debug, rootContext, doDefaults, specResolver } = state;
+    const { debug, rootContext, doDefaults, doSideEffects, specResolver } = state;
     const { searchName, path, type } = specifier;
+
+    // attempt to get the import/export specifiers for the file being imported
+    const fileSpecifiers = await specResolver.resolve(state, path.resolved);
+
+    // if `null`, the file failed to parse
+    if (!fileSpecifiers) return { specifier: null, hasSideEffects: false };
+
+    const { importSpecifiers, exportSpecifiers, hasSideEffects } = fileSpecifiers;
 
     // stop at namespaced imports; there's nothing more that we can do without
     // doing some hardcore code analysis
     if (type === $.namespace) {
         debug('HIT NAMESPACE IMPORT');
-        return null;
+        return { specifier: null, hasSideEffects };
     }
 
     // stop at default imports if we're not transforming them
     if (!doDefaults && type === $.default) {
         debug('HIT DEFAULT IMPORT');
-        return null;
+        return { specifier: null, hasSideEffects };
     }
 
-    // attempt to get the import/export specifiers for the file being imported
-    const fileSpecifiers = await specResolver.resolve(state, path.resolved);
-
-    // if `null`, the file failed to parse or had side-effects
-    if (!fileSpecifiers) return null;
-
-    const { importSpecifiers, exportSpecifiers } = fileSpecifiers;
+    if (!doSideEffects && hasSideEffects) {
+        debug('HIT SIDE-EFFECTING IMPORT');
+        return { specifier: null, hasSideEffects };
+    }
 
     debug('LOOKING FOR', searchName);
     debug('SEARCHING FILE', path.toString(rootContext));
@@ -233,17 +215,17 @@ const findNextSpecifier = async (state, specifier) => {
         debug('FOUND', expPointer);
 
         // it could be that this export is also an import in the same line
-        if (expPointer.path) return expPointer;
+        if (expPointer.path) return { specifier: expPointer, hasSideEffects };
 
         // was it re-exported? find the matching local import
         const impPointer = importSpecifiers.find(imp => imp.name === expPointer.name);
         if (impPointer) {
             debug('RE-EXPORTED AS', impPointer);
-            return impPointer;
+            return { specifier: impPointer, hasSideEffects };
         }
     }
 
-    return null;
+    return { specifier: null, hasSideEffects };
 };
 
 /**
@@ -253,34 +235,43 @@ const findNextSpecifier = async (state, specifier) => {
  * @async
  * @param {State} state
  * The state object of the plugin.
- * @param {ImportSpecifier} impSpecifier
- * The input import specifier.
+ * @param {Specifier} inSpecifier
+ * The input specifier.
  * @returns {ExportedSpecifierResult}
  * The result.
  */
-const findExportedSpecifier = async (state, impSpecifier) => {
+const findExportedSpecifier = async (state, inSpecifier) => {
     // sanity check
-    if (!impSpecifier)
+    if (!inSpecifier)
         throw new NullImportSpecifierError();
 
     const { debug } = state;
-    let depth = 0;
-    let nextSpecifier = impSpecifier;
-    let expSpecifier;
 
-    debug('RESOLVING', impSpecifier);
+    let depth = 0;
+    let sideEffects = [];
+    let nextSpecifier = inSpecifier;
+    let outSpecifier = null;
+    let hadSideEffects = false;
+
+    debug('RESOLVING', inSpecifier);
 
     while(nextSpecifier != null) {
         depth += 1;
         debug('DEPTH', depth);
 
-        expSpecifier = nextSpecifier;
-        nextSpecifier = await findNextSpecifier(state, expSpecifier);
+        if (hadSideEffects)
+            sideEffects.push(outSpecifier);
+
+        outSpecifier = nextSpecifier;
+
+        const found = await findNextSpecifier(state, outSpecifier);
+        hadSideEffects = found.hasSideEffects;
+        nextSpecifier = found.specifier;
     }
 
-    debug('GOING WITH', expSpecifier);
+    debug('GOING WITH', outSpecifier);
 
-    return { impSpecifier, expSpecifier };
+    return { inSpecifier, outSpecifier, sideEffects };
 };
 
 /**
@@ -295,33 +286,28 @@ const findExportedSpecifier = async (state, impSpecifier) => {
  * The result of processing an import specifier with {@link findExportedSpecifier}.
  */
 const addTransformData = (state, transformsMap, result) => {
-    const { impSpecifier, expSpecifier } = result;
+    const {
+        inSpecifier, outSpecifier,
+        sideEffects: inSideEffects
+    } = result;
 
-    // sanity check
-    if (!expSpecifier.path) {
-        state.loader.emitWarning(new Error([
-            'problem while creating transformations',
-            'the resolved specifier had no importable path',
-            'no transformations will be performed for this module'
-        ].join('; ')));
+    const outSideEffects = inSideEffects
+        .map(spec => spec.path.toString(state.sourceContext));
+    
+    const isImport = inSpecifier instanceof ImportSpecifier;
+    const identifier = isImport ? inSpecifier.name : inSpecifier.exportedName;
 
-        state.loader.emitWarning(new Error([
-            'resolved specifier',
-            require('util').inspect(expSpecifier)
-        ].join(': ')));
-
-        throw abortSignal;
-    }
-
-    transformsMap.set(impSpecifier.name, {
-        type: expSpecifier.type,
-        exportedName: expSpecifier.searchName,
-        path: expSpecifier.path.toString(ospath.dirname(state.sourcePath))
+    transformsMap.set(identifier, {
+        declarationType: isImport ? $.import : $.export,
+        specifierType: outSpecifier.type,
+        exportedName: isImport ? outSpecifier.searchName : outSpecifier.name,
+        path: outSpecifier.path.toString(state.sourceContext),
+        sideEffects: outSideEffects
     });
 };
 
 module.exports = {
     setupState,
-    addImportTransforms,
+    addTransforms,
     abortSignal
 };

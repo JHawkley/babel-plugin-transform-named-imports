@@ -1,11 +1,5 @@
-const ospath = require('path');
-const babel = require('@babel/core');
+const types = require('@babel/core').types;
 const $ = require('./constants');
-
-const types = babel.types;
-
-/** @typedef {import('./index').Debug} Debug */
-/** @typedef BabelAST A Babel-compatible AST. */
 
 /**
  * A specifier for an `ImportDeclaration` node.
@@ -24,6 +18,8 @@ const types = babel.types;
  * @prop {Object} [exported] The exported identifier.
  * @prop {string} exported.name The name of the exported identifier.
  */
+
+/** @typedef {(ImportSpecifierNode|ExportSpecifierNode)} SpecifierNode */
 
 /**
  * A Babel `ImportDeclaration` node.
@@ -60,61 +56,142 @@ const types = babel.types;
  */
 
 /**
+ * A Babel `Path` for an `ExportNamedDeclaration` node.
+ * @typedef ExportPath
+ * @prop {ExportNamedNode} node The node.
+ */
+
+/** @typedef {(ImportPath|ExportPath)} AnyPath */
+
+/**
  * @typedef TransformData
- * @prop {('default'|'namespace'|'named')} type
+ * @prop {('import'|'export')} declarationType
+ * @prop {('default'|'namespace'|'named')} specifierType
  * @prop {string} exportedName
  * @prop {string} path
+ * @prop {string[]} sideEffects
  */
 
 /** @typedef BabelTransform */
 /** @typedef {Map.<string, TransformData>} TransformsMap */
 /** @typedef {Map.<string, TransformsMap>} AllTransformsMap */
 
-// eslint-disable-next-line jsdoc/require-param
-/** @type {function(ImportSpecifierNode): string} */
-const getImportName = (specifier) => specifier.local.name;
+/**
+ * @typedef BabelContext
+ * @prop {AllTransformsMap} allTransforms
+ * @prop {Set.<string>} visitedNames
+ * @prop {Set.<string>} sideEffects
+ */
+
+/** The domains for each type of input specifier. */
+const domains = {
+    [$.import]: {
+        declaration: types.importDeclaration,
+        defaultSpecifier: (local) =>
+            types.importDefaultSpecifier(types.identifier(local)),
+        namespaceSpecifier: (local) =>
+            types.importNamespaceSpecifier(types.identifier(local)),
+        namedSpecifier: (local, exported) =>
+            types.importSpecifier(
+                types.identifier(local),
+                types.identifier(exported)
+            )
+    },
+    [$.export]: {
+        declaration: (specifiers, source) =>
+            types.exportNamedDeclaration(null, specifiers, source),
+        defaultSpecifier: (local, exported) =>
+            local === exported
+            ? types.exportDefaultSpecifier(types.identifier(exported))
+            : domains[$.export].namedSpecifier(local, exported),
+        namespaceSpecifier: (local, exported) =>
+            types.exportNamespaceSpecifier(types.identifier(exported)),
+        namedSpecifier: (local, exported) =>
+            types.exportSpecifier(
+                types.identifier(local),
+                types.identifier(exported)
+            )
+    }
+};
 
 // eslint-disable-next-line jsdoc/require-param
-/** @type {function(TransformsMap): function(string): BabelTransform} */
-const toTransform = (transformData) => (localName) => {
-    // replace our import with a new one that imports
+/** @type {function(SpecifierNode): string} */
+const getSpecifierName = (specifier) =>
+    (specifier.exported || specifier.local).name;
+
+// eslint-disable-next-line jsdoc/require-param
+/** @type {function(TransformsMap, Set.<string>): function(string): BabelTransform} */
+const toTransform = (transformData, sideEffects) => (localName) => {
+    // replace our import/export with a new one that imports
     // straight from the place where it was exported...
 
-    const { type, exportedName, path } = transformData.get(localName);
+    const {
+        declarationType, specifierType,
+        exportedName, path
+    } = transformData.get(localName);
 
-    switch (type) {
+    // remove this path as a side-effect, since it is being imported
+    sideEffects.delete(path);
+
+    // determine the functions for creating the transforms
+    const domain = domains[declarationType];
+
+    switch (specifierType) {
         case $.default:
-            return types.importDeclaration(
-                [types.importDefaultSpecifier(
-                    types.identifier(localName)
-                )],
-                types.stringLiteral(path),
+            return domain.declaration(
+                [domain.defaultSpecifier(localName, exportedName)],
+                types.stringLiteral(path)
             );
 
         case $.namespace:
-            return types.importDeclaration(
-                [types.importNamespaceSpecifier(
-                    types.identifier(localName)
-                )],
-                types.stringLiteral(path),
+            return domain.declaration(
+                [domain.namespaceSpecifier(localName, exportedName)],
+                types.stringLiteral(path)
             );
 
         case $.named:
-            return types.importDeclaration(
-                [types.importSpecifier(
-                    types.identifier(localName),
-                    types.identifier(exportedName),
-                )],
-                types.stringLiteral(path),
+            return domain.declaration(
+                [domain.namedSpecifier(localName, exportedName)],
+                types.stringLiteral(path)
             );
 
         default:
             // if we get here, something is seriously wrong
             throw new Error([
                 'problem while creating transformations',
-                `resolved export specifier has an unrecognized type: ${type}`
+                `resolved export specifier has an unrecognized type: ${specifierType}`
             ].join('; '));
     }
+};
+
+// eslint-disable-next-line jsdoc/require-param
+/** @type {function(BabelContext, AnyPath)} */
+const visitor = (context, path) => {
+    const { allTransforms, visitedNames, sideEffects } = context;
+    const originalPath = path.node.source.value;
+    const specifiers = path.node.specifiers;
+    const transformData = allTransforms.get(originalPath);
+
+    // abort in the case we have nothing to transform
+    if (!transformData || transformData.size !== specifiers.length) return;
+
+    // get the names of our imports
+    const specifierNames = specifiers
+        .map(getSpecifierName)
+        .filter(name => !visitedNames.has(name));
+    
+    if (specifierNames.length === 0) return;
+
+    // add imports to the visited list
+    specifierNames.forEach(name => visitedNames.add(name));
+
+    // produce the transforms, filtering out any identifiers that
+    // have already been visited previously
+    const transforms = specifierNames
+        .map(toTransform(transformData, sideEffects));
+    
+    if (transforms.length > 0)
+        path.replaceWithMultiple(transforms);
 };
 
 /**
@@ -125,6 +202,14 @@ const toTransform = (transformData) => (localName) => {
  */
 const createBabelPlugin = (allTransforms) => {
     const visitedNames = new Set();
+    const sideEffects = new Set();
+
+    for (const kvpTransforms of allTransforms)
+        for (const kvpData of kvpTransforms[1])
+            for (const sideEffect of kvpData[1].sideEffects)
+                sideEffects.add(sideEffect);
+    
+    const context = { allTransforms, visitedNames, sideEffects };
 
     return {
         name: $.pluginName,
@@ -132,78 +217,28 @@ const createBabelPlugin = (allTransforms) => {
             // eslint-disable-next-line jsdoc/require-param
             /** @type {function(ImportPath)} */
             ImportDeclaration(path) {
-                const originalPath = path.node.source.value;
-                const specifiers = path.node.specifiers;
-                const transformData = allTransforms.get(originalPath);
-
-                // abort in the case we have nothing to transform
-                if (!transformData || transformData.size !== specifiers.length) return;
-
-                // get the names of our imports
-                const specifierNames = specifiers
-                    .map(getImportName)
-                    .filter(name => !visitedNames.has(name));
-                
-                if (specifierNames.length === 0) return;
-
-                // add imports to the visited list
-                specifierNames.forEach(name => visitedNames.add(name));
-
-                // produce the transforms, filtering out any identifiers that
-                // have already been visited previously
-                const transforms = specifierNames
-                    .map(toTransform(transformData));
-                
-                if (transforms.length > 0)
-                    path.replaceWithMultiple(transforms);
+                visitor(context, path);
+            },
+            // eslint-disable-next-line jsdoc/require-param
+            /** @type {function(ExportPath)} */
+            ExportNamedDeclaration(path) {
+                // ignore nodes without a source path
+                if (!path.node.source) return;
+                visitor(context, path);
             }
+        },
+        post(file) {
+            if (sideEffects.size === 0) return;
+
+            const nodes = Array.from(sideEffects, (sideEffect) => {
+                return types.importDeclaration(
+                    [], types.stringLiteral(sideEffect)
+                );
+            });
+            
+            file.path.unshiftContainer('body', nodes);
         }
     };
 };
 
-const resolveConfig = (path, config) => {
-    if(config) {
-        if (typeof baseOptions === 'string') {
-            if (ospath.basename(config) === '.babelrc') {
-                const babelrcRoot = ospath.relative(path, config);
-                return {
-                    configFile: false,
-                    babelrc: true,
-                    babelrcRoots: [ospath.join(babelrcRoot, '**/*')]
-                };
-            }
-            else {
-                return {
-                    configFile: config,
-                    babelrc: false
-                };
-            }
-        }
-    }
-
-    return config;
-};
-
-/**
- * Parses source code into a Babel AST.
- * 
- * @async
- * @param {string} path The path of the file being parsed.
- * @param {string} source The source code of the file.
- * @param {(string|Object)} [baseConfig] The Babel options to use as a base.
- * @returns {BabelAST} A Babel AST.
- */
-const parseAst = async (path, source, baseConfig) => {
-    const config = Object.assign({}, resolveConfig(path, baseConfig), {
-        caller: {
-            name: $.pluginName,
-            supportsStaticESM: true
-        },
-        filename: path,
-        sourceType: 'unambiguous'
-    });
-
-    return await babel.parseAsync(source, config);
-};
-
-module.exports = { createBabelPlugin, resolveConfig, parseAst };
+module.exports = createBabelPlugin;
