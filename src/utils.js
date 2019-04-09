@@ -2,30 +2,11 @@ const fs = require('fs');
 const ospath = require('path');
 
 /**
- * @template K,V
- * @typedef KVP
- * @prop {K} key
- * @prop {V} value
- */
-
-/**
  * A decomposed request.
  * * [0] The path portion.
  * * [1] The loaders portion.
  * * [2] The query portion.
  * @typedef {[string, ?string, ?string]} DecomposedRequest
- */
-
-/**
- * @template T,U
- * @typedef Future
- * @prop {string} name
- * @prop {boolean} didResolve
- * @prop {boolean} didReject
- * @prop {boolean} didComplete
- * @prop {Promise.<U>} promise
- * @prop {function(T): void} resolve
- * @prop {function(Error): void} reject
  */
 
 /** @enum {Symbol} */
@@ -136,98 +117,6 @@ const isInPath = (path, target) => {
 };
 
 /**
- * @param {*} obj
- * @returns {obj is KVP}
- */
-const isKVP = (obj) => obj && obj.key && obj.value;
-
-/**
- * Creates a map-of-maps from the given entries.  Each entry should be
- * a {@link KVP} object.  If the {@link KVP#value} property is an array
- * and it contains only {@link KVP} objects, they will be merged into
- * a nested map.
- * 
- * @param {KVP[]} entries
- * An array of arrays.
- * @param {Map} [map]
- * The map to merge the entries into.  If not provided, a new map
- * will be created and returned.
- * @returns {Map}
- * The resulting map.
- */
-const mergeMap = (entries, map = new Map()) => {
-    if (entries.length === 0) return map;
-
-    entries.forEach(({key, value}) => {
-        if (!Array.isArray(value) || !value.every(isKVP))
-            map.set(key, value);
-        else {
-            let nextMap = map.get(key);
-            if (!nextMap) {
-                nextMap = new Map();
-                map.set(key, nextMap);
-            }
-            mergeMap(value, nextMap);
-        }
-    });
-
-    return map;
-};
-
-/**
- * Flattens an array of arrays.
- * 
- * @template T
- * @param {T[][]} arrayOfArrays
- * An array of arrays to be flattened.
- * @returns {T[]}
- * The flattened array.
- */
-const flatten = (arrayOfArrays) => Array.prototype.concat.apply([], arrayOfArrays);
-
-/** Provides map functions for arrays that run either synchronously or asynchronously. */
-const mapping = {
-    /**
-     * Transforms the provided (promised) array using the given transformation function.
-     * This function executes asynchronously, transforming all elements at once.
-     * 
-     * @async
-     * @template T,U
-     * @param {(T[]|Promise.<T[]>)} arr
-     * The array or promised array to transform.
-     * @param {function(T, number, T[]): (U|Promise.<U>)} asyncMapFn
-     * The asynchronous transformation function.
-     * @returns {U[]}
-     * The transformed result.
-     */
-    async: async (arr, asyncMapFn) => await Promise.all((await arr).map(asyncMapFn)),
-
-    /**
-     * Transforms the provided (promised) array using the given transformation function.
-     * This function executes synchronously, transforming each element one at a time,
-     * awaiting on the return value.
-     * 
-     * @async
-     * @template T,U
-     * @param {(T[]|Promise.<T[]>)} arr
-     * The array or promised array to transform.
-     * @param {function(T, number, T[]): (U|Promise.<U>)} asyncMapFn
-     * The asynchronous transformation function.
-     * @returns {U[]}
-     * The transformed result.
-     */
-    sync: async (arr, asyncMapFn) => {
-        arr = await arr;
-        const out = new Array(arr.length);
-
-        for (let i = 0, len = arr.length; i < len; i++)
-            out[i] = await asyncMapFn(arr[i], i, arr);
-
-        return out;
-    }
-};
-
-/**
  * Provides iteration/forEach functions for arrays that run either
  * synchronously or asynchronously.
  */
@@ -273,66 +162,6 @@ const iterating = {
     }
 };
 
-/**
- * @template T,U
- * @param {string} [name]
- * The name of the future.
- * @param {function(Promise.<T>): Promise.<U>} [decorator]
- * A function that will transform the resolved value.
- * @returns {Future.<T, U>}
- * A new future.
- */
-const future = (name = 'unnamed', decorator = null) => {
-    /**
-     * @template U
-     * @typedef OuterRef
-     * @prop {Promise.<U>} p
-     * @prop {function(U): void} ok
-     * @prop {function(Error): void} fail
-     */
-
-    let resolved = false;
-    let rejected = false;
-    let completed = false;
-
-    /** @type {Promise.<OuterRef.<U>>} */
-    const outer = new Promise((outerOk) => {
-        const result = {};
-        const p = new Promise((innerOk, innerFail) => {
-            result.ok = innerOk;
-            result.fail = innerFail;
-            outerOk(result);
-        });
-        result.p = decorator ? decorator(p) : p;
-    });
-
-    const inner = outer.then(({p}) => p);
-
-    const errorMsg = () => `future "${name}" already ${resolved ? 'resolved' : 'rejected'}`;
-
-    return {
-        get name() { return name; },
-        get didResolve() { return resolved; },
-        get didReject() { return rejected; },
-        get didComplete() { return completed; },
-        get promise() { return inner; },
-
-        resolve(value) {
-            if (completed) throw new Error(errorMsg());
-
-            completed = resolved = true;
-            outer.then(({ok}) => ok(value));
-        },
-
-        reject(reason) {
-            if (completed) throw new Error(errorMsg());
-
-            completed = rejected = true;
-            outer.then(({fail}) => fail(reason));
-        }
-    };
-};
-
 module.exports = {
     pathTypes,
     decomposePath,
@@ -340,9 +169,5 @@ module.exports = {
     contextRelative,
     checkPath,
     isInPath,
-    mergeMap,
-    flatten,
-    mapping,
-    iterating,
-    future
+    iterating
 };
