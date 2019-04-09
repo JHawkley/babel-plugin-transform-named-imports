@@ -2,8 +2,8 @@ const util = require('util');
 const types = require('@babel/core').types;
 
 const $ = require('./constants');
-const ResolvedPath = require('./pathResolver').ResolvedPath;
 
+/** @typedef {import('./pathResolver').ResolvedPath} ResolvedPath */
 /** @typedef {import('./babel').ExportSpecifierNode} ExportSpecifierNode */
 /** @typedef {import('./babel').ExportDefaultNode} ExportDefaultNode */
 /** @typedef {import('./babel').ExportNamedNode} ExportNamedNode */
