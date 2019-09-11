@@ -21,7 +21,6 @@ const rePath = /^(.*!)?(.*?)(\?.*)?$/;
 /**
  * Decomposes a path into its module path, loaders, and query.
  * 
- * @static
  * @param {string} originalPath
  * The request to decompose.
  * @returns {DecomposedRequest}
