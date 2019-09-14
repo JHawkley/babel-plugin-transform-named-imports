@@ -1,24 +1,21 @@
 /** @enum {string} */
 module.exports = Object.freeze({
-    // common strings
-    loaderName: 'resolve-imports-loader',
-    pluginName: 'babel-plugin-resolve-imports',
-    cachedAst: 'resolve-imports-loader:babel-ast',
-    specLoaderQuery: 'resolve-imports-spec-loader',
+  // common strings
+  webpackName: "webpack-resolve-imports-plugin",
+  jsAuto: "javascript/auto",
+  jsEsm: "javascript/esm",
 
-    // declaration types
-    export: 'export',
-    import: 'import',
+  // renamed vars
+  importedVar: "imported var",
+  derefVar: "deref imported var",
 
-    // specifier types
-    default: 'default',
-    namespace: 'namespace',
-    named: 'named',
-    unknown: 'unknown',
+  // declaration types
+  export: "export",
+  import: "import",
 
-    // pickling types
-    specResult: 'specifier-result',
-    resolvedPath: 'resolved-path',
-    exportSpec: 'export-specifier',
-    importSpec: 'import-specifier'
+  // specifier types
+  default: "default",
+  namespace: "namespace",
+  named: "named",
+  unknown: "unknown"
 });
